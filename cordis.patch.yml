@@ -39,6 +39,15 @@
 - insert:
     - id: loop-runner
       name: '@tyza66/dsh-loop-agent'
+      # `disabled` controls whether the row mounts at all. Default false:
+      # the loop attaches to every new agent on the host scope as soon as
+      # the bundle is installed. To turn the loop off without uninstalling
+      # the bundle, add `- id: loop-runner, disabled: true` to your
+      # profile's own cordis.patch.yml (the user layer comes after this
+      # bundle's patch and overrides by row id). The change takes effect
+      # on the next profile start; existing agents keep running until
+      # their session is torn down.
+      disabled: false
       config:
         continuation: 'Please continue from where you left off. (Round {{round}})'
         initialBackoffMs: 1000
