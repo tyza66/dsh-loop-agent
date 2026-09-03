@@ -1,12 +1,30 @@
 /**
- * @tyza66/dsh-loop-agent — endless same-session loop driver.
+ * @tyza66/dsh-loop-agent — endless same-session loop driver for the dsh web profile.
  *
- * Rides over dsh-base like `@deepseek-ai/dsh-headless` does, but instead of
- * printing the final answer and exiting it re-injects a user-configurable
- * continuation prompt at the next turn boundary, forever. One Agent and one
- * Session live for the whole run, so each round sees the full accumulating
- * transcript; only the user message at the start of the next round is
- * replaced by the template.
+ * Attaches to every new agent through the host-scope `agent/created` hook.
+ * After every turn an agent finishes, the loop injects a user-configurable
+ * continuation prompt at the next turn boundary, forever. The same Agent
+ * and the same Session live for the whole run, so each round sees the
+ * full accumulating transcript; only the next user message is replaced by
+ * the template.
+ *
+ * User messages take priority by inbox construction: client input lands
+ * in `next-step` while the loop's continuation lands in `next-turn`, and
+ * the inbox `claim("next-turn")` order always pulls `next-step` first.
+ * The loop only acts on `agent.whenIdle()`, so it cannot preempt
+ * in-flight work; once the user stops sending, the agent runs the queued
+ * continuation, goes idle, and the loop queues the next one.
+ *
+ * The loop never exits on its own. Any failure is caught and converted
+ * into exponential backoff plus a re-send of the same prompt. The only
+ * exit is the session being torn down: `agent/disposed` (or
+ * `session/disposed`) observed on the host scope flips the loop's
+ * `disarmed` flag.
+ *
+ * Context-window pressure is *not* the loop's job. 80% / `/compact` is
+ * wired by re-enabling `dsh-compaction-basic` (auto) and
+ * `dsh-command-compact` in the patch; the loop and the compactor are
+ * orthogonal, and the compactor runs in the same session.
  *
  * @module @tyza66/dsh-loop-agent
  */
@@ -16,49 +34,36 @@ import z from "@deepseek-ai/schemastery";
 /** Stable Cordis plugin name. */
 export declare const name = "loop-runner";
 
-/** Core services required before the loop can start. */
+/** Service dependencies the apply step needs before registering hooks. */
 export declare const inject: string[];
 
-/** Bundle config: the task plus loop behavior. Values arrive from the loopStartup service. */
+/** Loop config: continuation template + retry pacing. */
 export interface Config {
-  /** The first user message; the loop runs at least one round on it. */
-  task: string;
   /**
-   * Continuation prompt sent at the start of every round after the first.
-   * Supports `{{task}}`, `{{lastAnswer}}`, `{{round}}`, `{{turn}}`. Default
-   * is "Please continue from where you left off. (Round {{round}})".
+   * Continuation prompt template. Plain text; supports `{{lastAnswer}}`,
+   * `{{round}}` (1-based; round 1 is the first continuation, not the
+   * user's first message), and `{{task}}` (always empty in web mode).
    */
   continuation: string;
-  /** Hard upper bound on rounds; 0 means no cap. */
-  maxRounds: number;
+  /** Initial backoff in milliseconds for the first failure-driven retry. */
+  initialBackoffMs: number;
+  /** Upper cap on the exponential backoff, in milliseconds. */
+  maxBackoffMs: number;
+  /** Multiplier applied to the backoff on each successive failure. */
+  backoffFactor: number;
   /**
-   * Case-insensitive substrings that, when found in the last assistant
-   * text of a round, end the loop with exit code 0.
+   * If true, the loop only logs at warn / error level and stays silent
+   * on a clean run. Default false: every round boundary emits an info
+   * line so a long run leaves a visible trace in `dsh` logs.
    */
-  exitPhrases: string[];
-  /** Suppress per-round header lines on stderr. */
   quiet: boolean;
 }
 
 export declare const Config: z<Config>;
 
-/** Process-facing effects of one run: output streams plus the launcher's bounded exit request. */
-interface LoopIo {
-  stdout: { write(chunk: string): unknown };
-  stderr: { write(chunk: string): unknown };
-  /** Request process exit with `code` after the tree disposes. */
-  exit(code: number): void;
-}
-
-/** The process streams the runner writes to; tests substitute captures. */
-export declare const internals: {
-  stdout: LoopIo["stdout"];
-  stderr: LoopIo["stderr"];
-};
-
 /**
  * Mount the endless same-session loop driver.
- * @param ctx - plugin context carrying core services and the launcher-provided exit request.
+ * @param ctx - plugin context carrying the agents service and a logger.
  * @param config - validated loop config.
  */
 export declare function apply(ctx: Context, config: Config): void;

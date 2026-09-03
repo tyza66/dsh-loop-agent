@@ -1,41 +1,47 @@
-# dsh-loop-agent — endless same-session loop bundle for the dsh headless profile.
+# dsh-loop-agent — endless same-session loop bundle for the dsh web profile.
 #
-# Mounts over dsh-base and rides alongside (then disables) the default
-# @deepseek-ai/dsh-headless one-shot runner. The new loop-runner row keeps
-# the same Agent / Session alive across rounds: after every final assistant
-# turn it injects a user-configurable continuation prompt and waits for the
-# next turn to quiesce. A SIGINT / SIGTERM (or a matching exit phrase, or
-# hitting maxRounds) breaks the loop and exits cleanly through appExit.
+# Mounts over dsh-web-app. Two responsibilities:
+#   1. Re-enable the upstream dsh-compaction-basic / dsh-command-compact /
+#      dsh-tool-result-pruner rows (web-app disables them by default because
+#      it normally moves compaction behind agent presets; for this bundle
+#      the loop runs against the host plane and the compactor is the
+#      orthogonal context-window safety net).
+#   2. Insert the loop-runner row, which attaches a fire-and-forget driver
+#      task to every new agent on the host scope. The driver queues a
+#      user-configurable continuation prompt at every turn boundary,
+#      forever, retrying with exponential backoff on any failure and
+#      exiting only when the agent or session is torn down.
 
-# Reset the dsh-headless persona override so loop sessions describe themselves
-# the same way one-shot sessions do (continuity with prior profiles is a
-# feature, not a bug).
-- id: system-prompt
+# ── re-enable compaction (web-app disables these; we want them on) ────────
+# 80% threshold + 16% retain + auto = compact proactively when the
+# assembled context hits 80% of the model window, retaining the most
+# recent 16% verbatim and summarising the rest. The loop does not know
+# about context pressure at all; the compactor is the safety net.
+- id: compaction-basic
+  disabled: false
   config:
-    persona: >-
-      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+    auto: true
+    thresholdRatio: 0.8
+    retainRatio: 0.16
 
-# The default one-shot runner would print and exit; we replace it.
-- id: headless-runner
-  disabled: true
+# /compact command becomes available so the user can trigger an immediate
+# compaction in addition to the auto one.
+- id: command-compact
+  disabled: false
 
+# The pruner trims overgrown tool-result blocks between auto-compaction
+# passes; harmless when no oversized results are present, prevents the
+# single-tool-bloat case from blocking the compactor's threshold.
+- id: tool-result-pruner
+  disabled: false
+
+# ── insert the loop runner row ───────────────────────────────────────────
 - insert:
-    # Register this bundle's command-line provider. It parses the same
-    # positional task the one-shot profile accepts, plus a few loop-only
-    # flags (--continue, --max-rounds, --exit-phrase), and publishes a
-    # service the loop-runner row below waits on.
-    - id: loop-startup
-      name: '@tyza66/dsh-loop-agent/startup'
-
-    # Replace the one-shot runner with an in-process endless loop over the
-    # same Agent / Session. Values come from the loopStartup service so a
-    # command flag can override the bundle default without recompiling.
     - id: loop-runner
       name: '@tyza66/dsh-loop-agent'
-      inject: [loopStartup]
       config:
-        task: !!js ctx.loopStartup.task
-        continuation: !!js ctx.loopStartup.continuation
-        maxRounds: !!js ctx.loopStartup.maxRounds
-        exitPhrases: !!js ctx.loopStartup.exitPhrases
-        quiet: !!js ctx.loopStartup.quiet
+        continuation: 'Please continue from where you left off. (Round {{round}})'
+        initialBackoffMs: 1000
+        maxBackoffMs: 32000
+        backoffFactor: 2
+        quiet: false
