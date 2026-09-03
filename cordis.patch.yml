@@ -1,0 +1,41 @@
+# dsh-loop-agent — endless same-session loop bundle for the dsh headless profile.
+#
+# Mounts over dsh-base and rides alongside (then disables) the default
+# @deepseek-ai/dsh-headless one-shot runner. The new loop-runner row keeps
+# the same Agent / Session alive across rounds: after every final assistant
+# turn it injects a user-configurable continuation prompt and waits for the
+# next turn to quiesce. A SIGINT / SIGTERM (or a matching exit phrase, or
+# hitting maxRounds) breaks the loop and exits cleanly through appExit.
+
+# Reset the dsh-headless persona override so loop sessions describe themselves
+# the same way one-shot sessions do (continuity with prior profiles is a
+# feature, not a bug).
+- id: system-prompt
+  config:
+    persona: >-
+      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+
+# The default one-shot runner would print and exit; we replace it.
+- id: headless-runner
+  disabled: true
+
+- insert:
+    # Register this bundle's command-line provider. It parses the same
+    # positional task the one-shot profile accepts, plus a few loop-only
+    # flags (--continue, --max-rounds, --exit-phrase), and publishes a
+    # service the loop-runner row below waits on.
+    - id: loop-startup
+      name: '@tyza66/dsh-loop-agent/startup'
+
+    # Replace the one-shot runner with an in-process endless loop over the
+    # same Agent / Session. Values come from the loopStartup service so a
+    # command flag can override the bundle default without recompiling.
+    - id: loop-runner
+      name: '@tyza66/dsh-loop-agent'
+      inject: [loopStartup]
+      config:
+        task: !!js ctx.loopStartup.task
+        continuation: !!js ctx.loopStartup.continuation
+        maxRounds: !!js ctx.loopStartup.maxRounds
+        exitPhrases: !!js ctx.loopStartup.exitPhrases
+        quiet: !!js ctx.loopStartup.quiet
