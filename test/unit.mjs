@@ -163,5 +163,20 @@ check("only non-user events at/after -> false",
 check("error turn/end at/after does not count by itself",
   hasNewerUserActivity([{ seq: 1, type: "turn/end", data: { reason: { kind: "error" } } }], 1), false);
 
+// Plugin-injected events must not masquerade as a real user interjection
+// (mirrors the filter in hasUserMessage / lastUserMessageText). Without
+// this, a dsh snapshot injected during backoff would skip a legitimate retry.
+check("plugin-injected user/message does not count",
+  hasNewerUserActivity([{ seq: 1, type: "user/message", data: { source: { kind: "plugin" } } }], 0), false);
+check("plugin-injected splice (all entries plugin) does not count",
+  hasNewerUserActivity([{ seq: 1, type: "agent/inbox/spliced", data: { inserted: [{ source: { kind: "plugin" } }] } }], 0), false);
+check("real user/message still counts alongside plugin-injected one",
+  hasNewerUserActivity([
+    { seq: 1, type: "user/message", data: { source: { kind: "plugin" } } },
+    { seq: 2, type: "user/message", data: { content: [{ type: "text", text: "hi" }] } }
+  ], 0), true);
+check("splice with one real + one plugin entry counts as real activity",
+  hasNewerUserActivity([{ seq: 1, type: "agent/inbox/spliced", data: { inserted: [{ source: { kind: "plugin" } }, { source: { kind: "user" } }] } }], 0), true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
