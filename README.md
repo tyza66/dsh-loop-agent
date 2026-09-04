@@ -138,8 +138,13 @@ half registers on `ctx.webServer`:
 | `POST` | `/api/loop-agent/enabled` | `{ "enabled": boolean }` | snapshot + `{ path, changed }` |
 | `POST` | `/api/loop-agent/continuation` | `{ "continuation": string }` | snapshot + `{ path, changed }` |
 
-`attachedAgents` is the live count of agents currently holding a running
-driver task on the host scope. `continuation` is the effective prompt
+`attachedAgents` counts the conversations that currently hold a live, armed
+driver on the host scope — sessions stopped by the user or archived are
+disarmed and excluded, and the count is 0 while the loop switch is off (an
+off switch parks every driver at the disabled gate, so reporting "N running"
+would be a lie). The settings page polls `/state` every 2 seconds, so the
+number shown stays live as sessions are archived, stopped, or created.
+`continuation` is the effective prompt
 (runtime override if set, else the configured default);
 `defaultContinuation` is the row-config default. `path` is the sidecar
 file the write landed in; `changed` is `false` when the new value

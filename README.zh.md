@@ -110,7 +110,10 @@ browser half 通过 host half 在 `ctx.webServer` 上注册的三条路由抵达
 | `POST` | `/api/loop-agent/enabled`         | `{ "enabled": boolean }`     | snapshot + `{ path, changed }`                                     |
 | `POST` | `/api/loop-agent/continuation`    | `{ "continuation": string }` | snapshot + `{ path, changed }`                                     |
 
-`attachedAgents` 是当前 host scope 上正持有 driver 任务的 agent 实时计数。
+`attachedAgents` 是 host scope 上当前**活着且已上膛**（loop 开着、driver 未
+disarm）的会话数——被用户停止或已归档的会话不算。开关关闭时它恒为 0：关着
+开关的 driver 全守在 disabled 闸门，报"N 个在跑"就是撒谎。设置页每 2 秒轮询
+一次 `/state`，面板上的数字跟着归档/停止/新建会话实时变化。
 `continuation` 是**生效中**的延续语（有运行时覆盖就用覆盖，否则是 row 配置
 默认值）；`defaultContinuation` 是 row 配置默认值。`path` 是写入落到的
 sidecar 文件路径；`changed` 为 `false` 表示新值与文件原本一致，没发生实际
