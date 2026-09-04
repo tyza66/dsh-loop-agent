@@ -9,10 +9,16 @@ turn boundary, forever.
 
 The same Agent and the same Session live for the whole run, so every round
 sees the full accumulating transcript — only the *next* user message is
-replaced by the template. **User messages take priority by inbox
-construction**: client input lands in `next-step` (steer / inject) while the
-loop's continuation lands in `next-turn` (followup), and the inbox's
-`claim("next-turn")` order always pulls `next-step` first.
+replaced by the template. **User messages take priority**, enforced at
+three layers: steering input (Cmd/Ctrl+Enter) lands in `next-step` and
+the inbox's `claim("next-turn")` always pulls `next-step` first, so a
+steer jumps ahead of everything; ordinary Enter input lands in the same
+`next-turn` queue as the continuation, but the agent loop drains the
+queue at every turn boundary before going idle, and the loop only queues
+a continuation after `whenIdle()` **and** after checking that no real
+user message is pending in the inbox — a queued user input always runs
+before the next continuation does. If nothing human is queued, the
+continuation runs and the loop keeps going forever.
 
 The loop never exits on its own. Any failure — turn-level LLM error, a
 thrown exception, even a transient context overflow — falls through to

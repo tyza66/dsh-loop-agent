@@ -7,9 +7,13 @@
 "延续语"，永远继续。
 
 整个 run 期间，Agent 和 Session 都只有一个——每轮都看到完整累积的对话历史，
-只有"下一句 user message"被模板替换。**用户消息天然优先**：客户端输入走
-`next-step`（steer / inject），loop 注入的延续语走 `next-turn`（followup），
-inbox 的 `claim("next-turn")` 顺序永远先取 `next-step`。
+只有"下一句 user message"被模板替换。**用户消息优先**，由三层机制保证：
+打断式输入（Cmd/Ctrl+Enter）走 `next-step`，inbox 的 `claim("next-turn")`
+顺序永远先取 `next-step`，所以 steer 消息永远插在最前面；普通 Enter 输入
+与延续语同走 `next-turn` 队列，但 agent 驱动循环在每个 turn 边界都先消化
+完队列才进入空闲，而 loop 只在 `whenIdle()` 之后、且确认 inbox 里没有
+真人消息 pending 时才排下一条延续语——**只要消息列表里有用户输入，它
+一定先于下一条延续语执行；没有用户输入，延续语才接管，无限继续**。
 
 loop 永不主动退出。任何失败——LLM 错误、throw、context 临时超限——都
 进入指数 backoff 并把上一轮触发失败的 prompt **真的重发**（重发永远不
