@@ -12,10 +12,13 @@
 inbox 的 `claim("next-turn")` 顺序永远先取 `next-step`。
 
 loop 永不主动退出。任何失败——LLM 错误、throw、context 临时超限——都
-进入指数 backoff 并重发上一轮的 prompt。唯一的退出是 agent 离开 live
-registry（web UI 停止 / 删会话，或 profile 重启）。loop 配 80% 自动
-compact + `/compact` 命令，长跑的边界不是 token 也不是轮数——只看你
-愿不愿意让它跑。
+进入指数 backoff 并重发上一轮的 prompt。退出只有两条路：**用户点一下
+对话里的"停止"按钮**——那一轮 `turn/end` 以 `aborted` 收场，driver
+立刻收手、不再排下一条，这正是"无尽直到你手动停"里的那个"手动停"；
+或者 agent 离开 live registry（删会话 / profile 重启）。若是在回答中途
+插了条新消息把当前轮打断（`interrupted`），loop 不会停，等这轮新问答
+落地后照常续。loop 配 80% 自动 compact + `/compact` 命令，长跑的边界
+不是 token 也不是轮数——只看你愿不愿意让它跑。
 
 ## 安装
 
@@ -39,6 +42,11 @@ bundle 同时带一个 browser half：在 web UI 的 Settings 侧栏里挂一个
 driver 轮询 `$DSH_HOME/profiles/<profile>/.dsh-loop-agent.json` 这个
 sidecar JSON，关掉后 ~2 秒内就停止排队延续语；再拨回来，同一批 agent
 立刻恢复 loop。无需重启 profile，下次 turn 边界就生效。
+
+**单场叫停** — 某一场对话跑飞了，直接点对话里的**停止**按钮。那场立即
+停：driver 看到 `aborted` 收尾就收手，之后这场回到普通一问一答，开关
+仍保持"开"，其他会话不受影响。想让这一场重新进入无尽模式：把开关
+**关掉再打开**（enable 时会重新武装所有被停止的会话），或重启 profile。
 
 **硬卸（兜底）** — 想把整个插件撤掉（没设置页、没 per-agent loop 任务、
 没 HTTP 路由），在 profile 的 user-layer patch 里加一行 row 覆盖：

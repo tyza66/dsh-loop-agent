@@ -16,9 +16,14 @@ loop's continuation lands in `next-turn` (followup), and the inbox's
 
 The loop never exits on its own. Any failure — turn-level LLM error, a
 thrown exception, even a transient context overflow — falls through to
-exponential backoff and the previous round's prompt is re-sent. The only
-exit is the agent leaving the live registry (the web UI stopping or
-deleting the session, or the profile being restarted). The loop is paired
+exponential backoff and the previous round's prompt is re-sent. There are
+exactly two exits: the user clicks the **stop** button in a conversation
+(that round's `turn/end` arrives as `aborted`, and the driver halts on the
+spot instead of queueing the next continuation — the "manual stop" of
+"endless until you manually stop"), or the agent leaves the live registry
+(conversation deleted, or the profile restarted). A turn merely preempted
+by an interjected user message (`interrupted`) does not exit the loop — it
+waits for that exchange to settle and resumes. The loop is paired
 with 80% auto-compaction and the `/compact` command, so a long run is
 bounded by neither tokens nor rounds; only your willingness to let it run.
 
@@ -49,6 +54,14 @@ switch. The plugin stays mounted; the driver polls a sidecar JSON at
 continuations within ~2 seconds of the toggle. Flipping it back resumes
 the loop on the same agents. No profile restart is required; the change
 takes effect on the next turn boundary.
+
+**Stop one conversation** — if a single conversation is running away, click
+its **stop** button. That conversation halts on the spot: the driver sees
+the `aborted` turn/end and stops instead of queueing the next continuation,
+so the conversation goes back to plain question-and-answer while the global
+switch stays on and every other conversation keeps looping. To re-arm that
+conversation into the endless run, toggle the switch **off and on** (enable
+sweeps halted conversations and reattaches drivers) or restart the profile.
 
 **Hard kill (escape hatch)** — to take the plugin down entirely (no
 settings section, no per-agent loop tasks, no HTTP routes), add a row
