@@ -112,7 +112,7 @@ time the supervisor sees the agent leave the registry. To re-enable, set
 
 ## Auto-default for mid-run interaction
 
-An endless run should not park on a human click. While the loop is on, two
+An endless run should not park on a human click. While the loop is on, three
 kinds of interaction that would otherwise stall the run are handled
 automatically — and only for agents this plugin is actively driving (loop
 on, driver armed); sessions you are chatting with directly keep the normal
@@ -123,15 +123,24 @@ ask/approve UI:
   marked `(推荐)` / `(Recommended)` wins (half- and full-width parentheses,
   case-insensitive), a `plan-review` intent approves its `approve` option,
   and a question with no marker falls back to its first option per the
-  recommended-first convention. **Free-text questions (no options) are
-  never guessed** — that whole batch goes to the human.
+  recommended-first convention.
+- **Free-text questions** (an `ask_user_question` item with no options) are
+  answered with a standing *autonomy grant* — `(无人值守自动应答)` — that
+  tells the model nobody is here to type: decide from context and tool
+  results, state your assumption when information is genuinely missing, and
+  keep going. This is deliberately **not** a fake human reply. Granting it
+  is a real autonomy decision — the model will act on information nobody
+  actually typed — so turn it off (`autoAnswerFreeText: false`) for runs
+  you want to stay on a leash; questions then go to the human and the run
+  parks until answered.
 - **One-shot approvals** (sandbox escalation, etc.) resolve as
   `allowed-once` immediately, with the `approval/asked` + `approval/decided`
   audit pair still written; sessions whose approval policy is `never` still
   reject every ask.
 
-Both behaviors can be turned off with the row config
-`autoAnswerQuestions: false` / `autoApproveActions: false`.
+All three can be turned off with the row config
+`autoAnswerQuestions: false` / `autoAnswerFreeText: false` /
+`autoApproveActions: false`.
 
 ## Where the state lives
 
@@ -205,8 +214,10 @@ your profile's user-layer patch:
 | `backoffFactor` | `2` | Multiplier applied per consecutive failure. 2 = the standard 1s → 2s → 4s → 8s → 16s → 32s ladder. 1.5 = slower growth. |
 | `idleGraceMs` | `300000` | On every dsh boot the supervisor re-attaches every restored historical session. If a session's most recent event is older than this window (default 5 minutes), the loop waits for a fresh user message before auto-continuing, so a restart cannot set every old session burning tokens at once. `0` disables the guard (stale sessions resume immediately). |
 | `quiet` | `false` | When true, the loop only logs warnings and errors; clean runs are silent. Default false: each round boundary logs an info line so a long run leaves a visible trace. |
-| `autoAnswerQuestions` | `true` | Auto-answer `ask_user_question` for driven agents while the loop is on: recommended-marked option → `plan-review` approve → first option. Free-text questions are never guessed. |
+| `autoAnswerQuestions` | `true` | Auto-answer `ask_user_question` option items for driven agents while the loop is on: recommended-marked option → `plan-review` approve → first option. |
+| `autoAnswerFreeText` | `true` | Auto-answer free-text `ask_user_question` items (no options) with the standing "unattended — decide autonomously" grant instead of parking the run on a human. Requires `autoAnswerQuestions`; off falls back to showing the question. |
 | `autoApproveActions` | `true` | Auto-grant one-shot approvals (`allowed-once`) for driven agents while the loop is on; the audit pair is still written. A `never` approval policy still rejects. |
+| `escalateAfterFailures` | `3` | After this many consecutive failures of the same retry prompt, the identical resend is replaced by an escalation prompt carrying the latest error code + message so the model routes around the failing operation. Further failures keep producing fresher escalation prompts until a turn completes (the chain then resets). `0` disables escalation (pure identical resends forever). |
 
 Config changes to the retry fields need a profile restart to apply. The
 continuation template is re-read at every turn boundary: a runtime

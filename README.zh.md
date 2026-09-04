@@ -87,20 +87,25 @@ dsh --profile web        # 重启；loop 现在关掉了
 
 ## 中间交互自动默认
 
-无尽跑不该卡在"等真人点一下"上。loop 开启期间，两类会打断 run 的交互
+无尽跑不该卡在"等真人点一下"上。loop 开启期间，三类会打断 run 的交互
 会被自动处理，且只对**本插件驱动中**（loop 开、driver 未停）的会话生效，
 你自己正常聊天的会话不受影响：
 
 - **带选项的问题**（模型调 `ask_user_question`）——自动选推荐项并直接
   以工具结果喂回模型，不弹卡：优先选声明了 `(推荐)` / `(Recommended)`
   标记的选项（全半角括号都认），`plan-review` 意图直接批 `approve` 项，
-  都没标记时按约定选第一个。**纯文本问题（没有选项）绝不猜**，整批照常
-  弹给你。
+  都没标记时按约定选第一个。
+- **纯文本问题**（`ask_user_question` 里没有选项的条目）——自动回一段
+  固定的**自治授权**：`(无人值守自动应答)`，告诉模型当前无人能输入，
+  基于已有上下文与工具结果自行决策，缺关键信息时先尝试用工具拿、实在
+  拿不到就说明假设并继续。这**不是**伪造人工回复。开这个开关是真正的
+  放权决定——模型会对没人实际打过字的信息采取行动；想给它拴绳就关掉
+  （`autoAnswerFreeText: false`），问题会弹给你，run 停在原地等人答。
 - **需一次性批准的操作**（沙箱提权等）——直接回 `allowed-once`（放行
   一次），audit 事件照写；会话批准策略是 `never` 的仍然一律拒绝。
 
-两个行为可用 row 配置关掉：`autoAnswerQuestions: false` /
-`autoApproveActions: false`。
+三个行为都能用 row 配置关掉：`autoAnswerQuestions: false` /
+`autoAnswerFreeText: false` / `autoApproveActions: false`。
 
 ## 状态存在哪
 
@@ -167,8 +172,10 @@ user-layer patch 里：
 | `backoffFactor` | `2` | 每次连续失败的乘数。2 = 1s→2s→4s→8s→16s→32s 标准阶梯；1.5 = 增长更慢。 |
 | `idleGraceMs` | `300000` | 每个 dsh 启动时 supervisor 会把恢复的历史会话全部重新挂上 loop。会话最近一条事件老于这个窗口（默认 5 分钟）时，loop **先等用户发新消息**再开始续，防止重启后一堆旧会话同时烧 token。`0` 关闭守卫（旧会话也立即续）。 |
 | `quiet` | `false` | true = 只 log warn/error；false = 每个 round 边界写一行 info，长跑有可见痕迹。 |
-| `autoAnswerQuestions` | `true` | loop 开启时自动应答驱动中 agent 的 `ask_user_question`：推荐标记项 → `plan-review` 的 approve 项 → 第一个选项。纯文本问题绝不猜。 |
+| `autoAnswerQuestions` | `true` | loop 开启时自动应答驱动中 agent 的 `ask_user_question` 带选项条目：推荐标记项 → `plan-review` 的 approve 项 → 第一个选项。 |
+| `autoAnswerFreeText` | `true` | 纯文本条目（无选项）自动回"无人值守、自行决策"的自治授权，不再停在原地等人。依赖 `autoAnswerQuestions`；关掉则照常弹给真人。 |
 | `autoApproveActions` | `true` | loop 开启时对驱动中 agent 的一次性批准请求直接 `allowed-once`；audit 照写。批准策略为 `never` 的会话仍然一律拒绝。 |
+| `escalateAfterFailures` | `3` | 同一重试 prompt 连续失败 N 次后，不再原样重发，改发携带最新错误码+信息的换路 prompt，引导模型绕开失败操作。继续失败会持续生成更新的换路 prompt，直到某一轮完成（链条重置）。`0` = 永远原样重发。 |
 
 重试相关的字段要重启 profile 才生效。延续语模板每个 turn 边界都重读：
 设置页的运行时覆盖**下一轮**就生效，不用重启；改 patch 里的
