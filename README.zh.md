@@ -12,15 +12,19 @@
 inbox 的 `claim("next-turn")` 顺序永远先取 `next-step`。
 
 loop 永不主动退出。任何失败——LLM 错误、throw、context 临时超限——都
-进入指数 backoff 并重发上一轮的 prompt。退出只有三条路：**用户点一下
-对话里的"停止"按钮**——那一轮 `turn/end` 以 `aborted` 收场，driver
-立刻收手、不再排下一条，这正是"无尽直到你手动停"里的那个"手动停"；
-**把会话归档**——归档只把会话藏起来、并不销毁 agent，supervisor 每秒
-对照 workspace 的归档集合，发现被归档就停 driver 并 cancel 当前工作，
-绝不让隐藏的会话在后台白烧 token；或者 agent 离开 live registry（删会话
-/ profile 重启）。若是在回答中途插了条新消息把当前轮打断（`interrupted`），
-loop 不会停，等这轮新问答落地后照常续。loop 配 80% 自动 compact +
-`/compact` 命令，长跑的边界不是 token 也不是轮数——只看你愿不愿意让它跑。
+进入指数 backoff 并把上一轮触发失败的 prompt **真的重发**（重发永远不
+放弃：退避涨到 `maxBackoffMs` 封顶后按封顶间隔一直重试，直到成功；重试
+期间你插的新消息会取代这条过期重发）。哪怕进程中途重启，停滞在错误轮
+的会话也会在下次 attach 时自愈——重放触发报错的那条消息继续重试。退出
+只有三条路：**用户点一下对话里的"停止"按钮**——那一轮 `turn/end` 以
+`aborted` 收场，driver 立刻收手、不再排下一条，这正是"无尽直到你手动停"
+里的那个"手动停"；**把会话归档**——归档只把会话藏起来、并不销毁 agent，
+supervisor 每秒对照 workspace 的归档集合，发现被归档就停 driver 并
+cancel 当前工作，绝不让隐藏的会话在后台白烧 token；或者 agent 离开 live
+registry（删会话 / profile 重启）。若是在回答中途插了条新消息把当前轮
+打断（`interrupted`），loop 不会停，等这轮新问答落地后照常续。loop 配
+80% 自动 compact + `/compact` 命令，长跑的边界不是 token 也不是轮数——
+只看你愿不愿意让它跑。
 
 ## 安装
 
