@@ -44,11 +44,15 @@ dsh plugin --profile web add https://github.com/tyza66/dsh-loop-agent
 ```
 
 Then start the web profile as usual. A supervisor on the host polls the
-live agent registry once per second and attaches a driver to every agent —
-new conversations take effect immediately, and restored historical
-sessions are re-attached after a restart too (but a session that has been
-idle longer than `idleGraceMs` waits for the user to speak first instead
-of auto-continuing and burning tokens). User messages still go through
+live agent registry once per second and attaches a driver to every
+top-level (root) agent — new conversations take effect immediately, and
+restored historical sessions are re-attached after a restart too (but a
+session that has been idle longer than `idleGraceMs` waits for the user
+to speak first instead of auto-continuing and burning tokens).
+Subagents (anything spawned under a parent owner context — dsh-subagent
+tasks, in-agent helpers, ...) are left alone: no driver, no auto-answer,
+no auto-approve; they are scoped, ephemeral helpers, not conversations
+the user can see in the message list. User messages still go through
 normally — they will always be processed before the loop's queued
 continuation.
 
@@ -170,12 +174,17 @@ half registers on `ctx.webServer`:
 | `POST` | `/api/loop-agent/enabled` | `{ "enabled": boolean }` | snapshot + `{ path, changed }` |
 | `POST` | `/api/loop-agent/continuation` | `{ "continuation": string }` | snapshot + `{ path, changed }` |
 
-`attachedAgents` counts the conversations that currently hold a live, armed
-driver on the host scope — sessions stopped by the user or archived are
-disarmed and excluded, and the count is 0 while the loop switch is off (an
-off switch parks every driver at the disabled gate, so reporting "N running"
-would be a lie). The settings page polls `/state` every 2 seconds, so the
-number shown stays live as sessions are archived, stopped, or created.
+`attachedAgents` counts the **top-level** conversations that currently hold
+a live, armed driver on the host scope — sessions stopped by the user or
+archived are disarmed and excluded, and the count is 0 while the loop
+switch is off (an off switch parks every driver at the disabled gate, so
+reporting "N running" would be a lie). Subagents (anything spawned under a
+parent owner context — dsh-subagent tasks, in-agent helpers, ...) are
+deliberately excluded: they are scoped, ephemeral helpers, not
+conversations a user can see in the message list, and the loop default is
+to leave them alone (no driver, no auto-answer, no auto-approve). The
+settings page polls `/state` every 2 seconds, so the number shown stays
+live as sessions are archived, stopped, or created.
 `continuation` is the effective prompt
 (runtime override if set, else the configured default);
 `defaultContinuation` is the row-config default. `path` is the sidecar
@@ -240,8 +249,8 @@ default:
 
 It then inserts one new row, `loop-runner`. Its host-side `apply` starts a
 **registry supervisor** (`ctx.effect` + a 1-second `setInterval`) that
-polls `ctx.agents.list()` and gives every not-yet-attached agent a
-fire-and-forget driver task that:
+polls `ctx.agents.roots()` and gives every not-yet-attached **top-level**
+agent a fire-and-forget driver task that:
 
 1. `await agent.whenIdle()` — wait for the current turn (if any) to finish.
 2. Slice the durable session log between the previous `turn/end` and the

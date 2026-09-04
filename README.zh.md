@@ -33,10 +33,13 @@ dsh plugin --profile web add https://github.com/tyza66/dsh-loop-agent
 ```
 
 之后照常启动 web profile。host 上的 supervisor 每秒轮询一次 live agent
-registry，自动给每个 agent 挂上 driver——**新开的对话即时生效**，重启
-后恢复的历史会话也会被重新挂上（但超过 `idleGraceMs` 没动静的旧会话
-会等用户先开口，不会自动续烧 token）。用户消息照常处理——总是先于
-loop 注入的延续语被消费。
+registry，**只**给顶层（root）agent 挂上 driver——**新开的对话即时生效**，
+重启后恢复的历史会话也会被重新挂上（但超过 `idleGraceMs` 没动静的旧
+会话会等用户先开口，不会自动续烧 token）。**子 agent 不挂 loop**（默认
+不开启无尽模式）：任何在父 agent scope 下被创建的、用户看不见的助手
+session——例如 dsh-subagent 派生的子任务、agent 内部 helper——都不挂
+driver、不开 auto-answer、不开 auto-approve。用户消息照常处理——总是先
+于 loop 注入的延续语被消费。
 
 bundle 同时带一个 browser half：在 web UI 的 Settings 侧栏里挂一个
 **无尽模式（Endless loop）** 入口。那个开关是日常 on/off 控件，patch 文件
@@ -133,8 +136,11 @@ browser half 通过 host half 在 `ctx.webServer` 上注册的三条路由抵达
 | `POST` | `/api/loop-agent/continuation`    | `{ "continuation": string }` | snapshot + `{ path, changed }`                                     |
 
 `attachedAgents` 是 host scope 上当前**活着且已上膛**（loop 开着、driver 未
-disarm）的会话数——被用户停止或已归档的会话不算。开关关闭时它恒为 0：关着
-开关的 driver 全守在 disabled 闸门，报"N 个在跑"就是撒谎。设置页每 2 秒轮询
+disarm）的**顶层**会话数——被用户停止或已归档的会话不算，**子 agent 也不
+算**（任何在父 agent scope 下创建的、用户看不见的助手 session——例如
+dsh-subagent 派生的子任务、agent 内部 helper——loop 默认不挂 driver，
+不参与自动答、也不参与自动批准）。开关关闭时它恒为 0：关着开关的
+driver 全守在 disabled 闸门，报"N 个在跑"就是撒谎。设置页每 2 秒轮询
 一次 `/state`，面板上的数字跟着归档/停止/新建会话实时变化。
 `continuation` 是**生效中**的延续语（有运行时覆盖就用覆盖，否则是 row 配置
 默认值）；`defaultContinuation` 是 row 配置默认值。`path` 是写入落到的
@@ -193,8 +199,8 @@ user-layer patch 里：
 
 然后插入一个新 row `loop-runner`。它的 host-side `apply` 启动一个
 **registry supervisor**（`ctx.effect` + 每秒 `setInterval`），轮询
-`ctx.agents.list()`，对每个还没挂上的 agent 启动一个 fire-and-forget
-driver 任务，循环：
+`ctx.agents.roots()`，**只**对每个还没挂上的顶层 root agent 启动一个
+fire-and-forget driver 任务，循环：
 
 1. `await agent.whenIdle()` — 等当前 turn（如果有）跑完
 2. 切片 durable session log，从上轮 `turn/end` 到当前 tail，取出本轮
