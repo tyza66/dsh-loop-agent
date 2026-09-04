@@ -28,15 +28,15 @@ function blockEndAt(marker) {
 }
 
 // Top-level helpers + constants. Extract from RECOMMENDED_SUFFIX through the
-// end of hasNewerUserActivity (contiguous region of pure declarations, no
+// end of isForeverCommand (contiguous region of pure declarations, no
 // interleaving executable statements).
 const regionStart = src.indexOf("const RECOMMENDED_SUFFIX");
-const regionEnd = blockEndAt("function hasNewerUserActivity");
+const regionEnd = blockEndAt("function isForeverCommand");
 const helperRegion = src.slice(regionStart, regionEnd);
 
-const mod = `${helperRegion}\nexport { RECOMMENDED_SUFFIX, isRecommendedLabel, stripRecommendedSuffix, FREE_TEXT_AUTO_ANSWER, pickAutoAnswers, renderEscalationPrompt, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary };`;
+const mod = `${helperRegion}\nexport { RECOMMENDED_SUFFIX, isRecommendedLabel, stripRecommendedSuffix, FREE_TEXT_AUTO_ANSWER, pickAutoAnswers, renderEscalationPrompt, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand };`;
 const tmpUrl = "data:text/javascript;base64," + Buffer.from(mod).toString("base64");
-const { pickAutoAnswers, renderEscalationPrompt, FREE_TEXT_AUTO_ANSWER, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary } = await import(tmpUrl);
+const { pickAutoAnswers, renderEscalationPrompt, FREE_TEXT_AUTO_ANSWER, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand } = await import(tmpUrl);
 
 let pass = 0;
 let fail = 0;
@@ -177,6 +177,20 @@ check("real user/message still counts alongside plugin-injected one",
   ], 0), true);
 check("splice with one real + one plugin entry counts as real activity",
   hasNewerUserActivity([{ seq: 1, type: "agent/inbox/spliced", data: { inserted: [{ source: { kind: "plugin" } }, { source: { kind: "user" } }] } }], 0), true);
+
+console.log("\n## isForeverCommand");
+check("/forever exact match", isForeverCommand("/forever"), true);
+check("/FOREVER case insensitive", isForeverCommand("/FOREVER"), true);
+check("/Forever mixed case", isForeverCommand("/Forever"), true);
+check("/forever with leading whitespace", isForeverCommand("  /forever"), true);
+check("/forever with trailing whitespace", isForeverCommand("/forever  "), true);
+check("/forever with extra text after", isForeverCommand("/forever please"), true);
+check("/forever with tab and newline", isForeverCommand("\t/forever\n"), true);
+check("non-string input returns false", isForeverCommand(null), false);
+check("empty string returns false", isForeverCommand(""), false);
+check("different command returns false", isForeverCommand("/help"), false);
+check("partial match returns false", isForeverCommand("/for"), false);
+check("/forever without leading slash returns false", isForeverCommand("forever"), false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

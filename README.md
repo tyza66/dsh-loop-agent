@@ -80,8 +80,12 @@ its **stop** button. That conversation halts on the spot: the driver sees
 the `aborted` turn/end and stops instead of queueing the next continuation,
 so the conversation goes back to plain question-and-answer while the global
 switch stays on and every other conversation keeps looping. To re-arm that
-conversation into the endless run, toggle the switch **off and on** (enable
-sweeps halted conversations and reattaches drivers) or restart the profile.
+conversation into the endless run:
+- Type `/forever` in the chat box (case-insensitive, leading/trailing
+  whitespace ignored) — only works when the global switch is on
+- Toggle the switch **off and on** (enable sweeps halted conversations and
+  reattaches drivers)
+- Restart the profile
 
 **Archive stops it too** — archiving a conversation (the **Archive session**
 action in its context menu) halts its loop just as fast, and cancels whatever
@@ -91,8 +95,9 @@ the loop would keep spending tokens on a conversation you can no longer see.
 The supervisor compares each live agent against `dsh-workspace`'s
 `archivedSessionIds` every second: archived sessions never get a driver, and
 a driver whose session was just archived is disarmed on the spot. Unarchiving
-does not auto-resume: to re-arm, toggle the loop **off and on** (sessions
-still archived are skipped by the re-arm sweep) or restart the profile.
+does not auto-resume: to re-arm, type `/forever` after unarchiving, toggle
+the loop **off and on** (sessions still archived are skipped by the re-arm
+sweep), or restart the profile.
 
 **Hard kill (escape hatch)** — to take the plugin down entirely (no
 settings section, no per-agent loop tasks, no HTTP routes), add a row
