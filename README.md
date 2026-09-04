@@ -110,6 +110,29 @@ kill agents that are already looping. Existing loops wind down the next
 time the supervisor sees the agent leave the registry. To re-enable, set
 `disabled: false` (or remove the override) and restart.
 
+## Auto-default for mid-run interaction
+
+An endless run should not park on a human click. While the loop is on, two
+kinds of interaction that would otherwise stall the run are handled
+automatically — and only for agents this plugin is actively driving (loop
+on, driver armed); sessions you are chatting with directly keep the normal
+ask/approve UI:
+
+- **Option questions** (`ask_user_question`) are answered automatically and
+  fed back to the model as a normal tool result, no card shown: the option
+  marked `(推荐)` / `(Recommended)` wins (half- and full-width parentheses,
+  case-insensitive), a `plan-review` intent approves its `approve` option,
+  and a question with no marker falls back to its first option per the
+  recommended-first convention. **Free-text questions (no options) are
+  never guessed** — that whole batch goes to the human.
+- **One-shot approvals** (sandbox escalation, etc.) resolve as
+  `allowed-once` immediately, with the `approval/asked` + `approval/decided`
+  audit pair still written; sessions whose approval policy is `never` still
+  reject every ask.
+
+Both behaviors can be turned off with the row config
+`autoAnswerQuestions: false` / `autoApproveActions: false`.
+
 ## Where the state lives
 
 The in-app controls (the enable switch and the continuation-prompt editor)
@@ -182,6 +205,8 @@ your profile's user-layer patch:
 | `backoffFactor` | `2` | Multiplier applied per consecutive failure. 2 = the standard 1s → 2s → 4s → 8s → 16s → 32s ladder. 1.5 = slower growth. |
 | `idleGraceMs` | `300000` | On every dsh boot the supervisor re-attaches every restored historical session. If a session's most recent event is older than this window (default 5 minutes), the loop waits for a fresh user message before auto-continuing, so a restart cannot set every old session burning tokens at once. `0` disables the guard (stale sessions resume immediately). |
 | `quiet` | `false` | When true, the loop only logs warnings and errors; clean runs are silent. Default false: each round boundary logs an info line so a long run leaves a visible trace. |
+| `autoAnswerQuestions` | `true` | Auto-answer `ask_user_question` for driven agents while the loop is on: recommended-marked option → `plan-review` approve → first option. Free-text questions are never guessed. |
+| `autoApproveActions` | `true` | Auto-grant one-shot approvals (`allowed-once`) for driven agents while the loop is on; the audit pair is still written. A `never` approval policy still rejects. |
 
 Config changes to the retry fields need a profile restart to apply. The
 continuation template is re-read at every turn boundary: a runtime

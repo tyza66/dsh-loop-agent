@@ -85,6 +85,23 @@ dsh --profile web        # 重启；loop 现在关掉了
 会在 supervisor 下一次发现 agent 离开 registry 时自然收尾。要重新打开，
 把 `disabled` 设回 `false`（或删掉覆盖）然后重启。
 
+## 中间交互自动默认
+
+无尽跑不该卡在"等真人点一下"上。loop 开启期间，两类会打断 run 的交互
+会被自动处理，且只对**本插件驱动中**（loop 开、driver 未停）的会话生效，
+你自己正常聊天的会话不受影响：
+
+- **带选项的问题**（模型调 `ask_user_question`）——自动选推荐项并直接
+  以工具结果喂回模型，不弹卡：优先选声明了 `(推荐)` / `(Recommended)`
+  标记的选项（全半角括号都认），`plan-review` 意图直接批 `approve` 项，
+  都没标记时按约定选第一个。**纯文本问题（没有选项）绝不猜**，整批照常
+  弹给你。
+- **需一次性批准的操作**（沙箱提权等）——直接回 `allowed-once`（放行
+  一次），audit 事件照写；会话批准策略是 `never` 的仍然一律拒绝。
+
+两个行为可用 row 配置关掉：`autoAnswerQuestions: false` /
+`autoApproveActions: false`。
+
 ## 状态存在哪
 
 应用内的两个控件（开关 + 延续语编辑框）都写入：
@@ -150,6 +167,8 @@ user-layer patch 里：
 | `backoffFactor` | `2` | 每次连续失败的乘数。2 = 1s→2s→4s→8s→16s→32s 标准阶梯；1.5 = 增长更慢。 |
 | `idleGraceMs` | `300000` | 每个 dsh 启动时 supervisor 会把恢复的历史会话全部重新挂上 loop。会话最近一条事件老于这个窗口（默认 5 分钟）时，loop **先等用户发新消息**再开始续，防止重启后一堆旧会话同时烧 token。`0` 关闭守卫（旧会话也立即续）。 |
 | `quiet` | `false` | true = 只 log warn/error；false = 每个 round 边界写一行 info，长跑有可见痕迹。 |
+| `autoAnswerQuestions` | `true` | loop 开启时自动应答驱动中 agent 的 `ask_user_question`：推荐标记项 → `plan-review` 的 approve 项 → 第一个选项。纯文本问题绝不猜。 |
+| `autoApproveActions` | `true` | loop 开启时对驱动中 agent 的一次性批准请求直接 `allowed-once`；audit 照写。批准策略为 `never` 的会话仍然一律拒绝。 |
 
 重试相关的字段要重启 profile 才生效。延续语模板每个 turn 边界都重读：
 设置页的运行时覆盖**下一轮**就生效，不用重启；改 patch 里的
