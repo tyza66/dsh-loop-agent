@@ -17,10 +17,14 @@ loop's continuation lands in `next-turn` (followup), and the inbox's
 The loop never exits on its own. Any failure — turn-level LLM error, a
 thrown exception, even a transient context overflow — falls through to
 exponential backoff and the previous round's prompt is re-sent. There are
-exactly two exits: the user clicks the **stop** button in a conversation
+exactly three exits: the user clicks the **stop** button in a conversation
 (that round's `turn/end` arrives as `aborted`, and the driver halts on the
 spot instead of queueing the next continuation — the "manual stop" of
-"endless until you manually stop"), or the agent leaves the live registry
+"endless until you manually stop"), the conversation is **archived** in the
+UI (archiving hides a session without disposing its agent, so the supervisor
+polls the workspace registry's archive set and halts — and cancels — any
+driver whose session got archived, so a hidden conversation never burns
+tokens in the background), or the agent leaves the live registry
 (conversation deleted, or the profile restarted). A turn merely preempted
 by an interjected user message (`interrupted`) does not exit the loop — it
 waits for that exchange to settle and resumes. The loop is paired
@@ -62,6 +66,17 @@ so the conversation goes back to plain question-and-answer while the global
 switch stays on and every other conversation keeps looping. To re-arm that
 conversation into the endless run, toggle the switch **off and on** (enable
 sweeps halted conversations and reattaches drivers) or restart the profile.
+
+**Archive stops it too** — archiving a conversation (the **Archive session**
+action in its context menu) halts its loop just as fast, and cancels whatever
+reply is in flight. Archiving never disposes the agent or session — it only
+hides the session from every grouping surface — so without an explicit stop
+the loop would keep spending tokens on a conversation you can no longer see.
+The supervisor compares each live agent against `dsh-workspace`'s
+`archivedSessionIds` every second: archived sessions never get a driver, and
+a driver whose session was just archived is disarmed on the spot. Unarchiving
+does not auto-resume: to re-arm, toggle the loop **off and on** (sessions
+still archived are skipped by the re-arm sweep) or restart the profile.
 
 **Hard kill (escape hatch)** — to take the plugin down entirely (no
 settings section, no per-agent loop tasks, no HTTP routes), add a row
