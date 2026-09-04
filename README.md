@@ -32,17 +32,26 @@ Then start the web profile as usual. Every new agent is automatically
 attached to the loop. User messages still go through normally — they will
 always be processed before the loop's queued continuation.
 
+The bundle also ships a browser half: an **Endless loop** entry in the
+web UI's Settings sidebar. The switch there is the everyday on/off
+control; the patch-file override is the escape hatch. See [Disable](#disable).
+
 ## Disable
 
-The bundle's `cordis.patch.yml` inserts the `loop-runner` row with
-`disabled: false`. To turn the loop off without uninstalling the bundle,
-edit your profile's user-layer patch:
+**In-app (recommended)** — open **Settings → Endless loop** and flip the
+switch. The plugin stays mounted; the driver polls a sidecar JSON at
+`$DSH_HOME/profiles/<profile>/.dsh-loop-agent.json` and stops queuing
+continuations within ~2 seconds of the toggle. Flipping it back resumes
+the loop on the same agents. No profile restart is required; the change
+takes effect on the next turn boundary.
+
+**Hard kill (escape hatch)** — to take the plugin down entirely (no
+settings section, no per-agent loop tasks, no HTTP routes), add a row
+override to your profile's user-layer patch:
 
 ```sh
 $DSH_HOME/profiles/web/cordis.patch.yml      # usually ~/.dsh/profiles/web/cordis.patch.yml
 ```
-
-Add (or uncomment) a row override:
 
 ```yaml
 - id: loop-runner
@@ -50,19 +59,46 @@ Add (or uncomment) a row override:
 ```
 
 The user layer is applied **after** the bundle's patch, so the row-level
-`disabled: true` wins. Save the file and **restart the web profile**:
+`disabled: true` wins. Restart the web profile to apply:
 
 ```sh
 # kill the running web profile (Ctrl-C in its terminal, or pkill -f 'dsh.*web')
 dsh --profile web        # restart; the loop is now off
 ```
 
-Existing agent loops wind down on their next `agent/disposed` / `session/
-disposed` — the disabled flag stops new agents from being attached, but
-it does not kill agents that are already looping. Restart the profile to
-stop everything cleanly.
+`disabled` only stops new agents from being attached; it does not kill
+agents that are already looping. Existing loops wind down on their next
+`agent/disposed` / `session/disposed`. To re-enable, set `disabled:
+false` (or remove the override) and restart.
 
-To re-enable, set `disabled: false` (or remove the override) and restart.
+## Where the state lives
+
+The in-app toggle writes to:
+
+```
+$DSH_HOME/profiles/<profile>/.dsh-loop-agent.json
+```
+
+The file is plain JSON; a missing or unreadable file means "enabled":
+
+```json
+{ "disabled": false, "updatedAt": "2026-09-04T00:00:00.000Z" }
+```
+
+You can also hand-edit this file. The driver re-reads it on every phase
+boundary, so a change takes effect within ~2 seconds without a restart.
+
+The browser half reaches the host through two webserver routes the host
+half registers on `ctx.webServer`:
+
+| Method | Path | Body | Returns |
+| --- | --- | --- | --- |
+| `GET`  | `/api/loop-agent/state`   | — | `{ enabled, attachedAgents, profile }` |
+| `POST` | `/api/loop-agent/enabled` | `{ "enabled": boolean }` | `{ enabled, attachedAgents, profile, path, changed }` |
+
+`attachedAgents` is the live count of agents currently holding a running
+driver task on the host scope. `path` is the sidecar file the write
+landed in; `changed` is `false` when the new value matched the file.
 
 ## Configure
 

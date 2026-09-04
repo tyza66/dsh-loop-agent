@@ -25,16 +25,23 @@ dsh plugin --profile web add https://github.com/tyza66/dsh-loop-agent
 之后照常启动 web profile。每个新 agent 都会被 loop 自动 attach。用户消息
 照常处理——总是先于 loop 注入的延续语被消费。
 
+bundle 同时带一个 browser half：在 web UI 的 Settings 侧栏里挂一个
+**无尽模式（Endless loop）** 入口。那个开关是日常 on/off 控件，patch 文件
+覆盖是兜底逃生口。详见 [关闭](#关闭)。
+
 ## 关闭
 
-bundle 的 `cordis.patch.yml` 用 `disabled: false` 插入 `loop-runner` row。
-要关掉 loop 而不卸载 bundle，编辑你 profile 的 user-layer patch：
+**应用内（推荐）** — 进 **Settings → 无尽模式**，拨开关。插件不卸载；
+driver 轮询 `$DSH_HOME/profiles/<profile>/.dsh-loop-agent.json` 这个
+sidecar JSON，关掉后 ~2 秒内就停止排队延续语；再拨回来，同一批 agent
+立刻恢复 loop。无需重启 profile，下次 turn 边界就生效。
+
+**硬卸（兜底）** — 想把整个插件撤掉（没设置页、没 per-agent loop 任务、
+没 HTTP 路由），在 profile 的 user-layer patch 里加一行 row 覆盖：
 
 ```sh
 $DSH_HOME/profiles/web/cordis.patch.yml      # 通常是 ~/.dsh/profiles/web/cordis.patch.yml
 ```
-
-加（或取消注释）一个 row 覆盖：
 
 ```yaml
 - id: loop-runner
@@ -42,18 +49,44 @@ $DSH_HOME/profiles/web/cordis.patch.yml      # 通常是 ~/.dsh/profiles/web/cor
 ```
 
 user layer 在 bundle 的 patch 之后 apply，所以 row 级别的 `disabled: true`
-会胜出。保存文件后**重启 web profile**：
+会胜出。**重启 web profile** 生效：
 
 ```sh
 # 杀掉跑着的 web profile（在它的 terminal 里 Ctrl-C，或 pkill -f 'dsh.*web'）
 dsh --profile web        # 重启；loop 现在关掉了
 ```
 
-**已存在**的 agent loop 会在下一次 `agent/disposed` / `session/disposed`
-时自然收尾——`disabled` 只阻止新 agent 被 attach，不杀已经在 loop 的。
-重启 profile 才能彻底清干净。
+`disabled` 只阻止新 agent 被 attach，不杀已经在 loop 的。已存在的 loop
+会在下一次 `agent/disposed` / `session/disposed` 自然收尾。要重新打开，
+把 `disabled` 设回 `false`（或删掉覆盖）然后重启。
 
-要重新打开，把 `disabled` 设回 `false`（或删掉覆盖）然后重启。
+## 状态存在哪
+
+应用内开关写入：
+
+```
+$DSH_HOME/profiles/<profile>/.dsh-loop-agent.json
+```
+
+文件是普通 JSON；缺失或读不出来都视为「开启」：
+
+```json
+{ "disabled": false, "updatedAt": "2026-09-04T00:00:00.000Z" }
+```
+
+你也可以手改这个文件。driver 每个 phase 边界重读，~2 秒内就生效，不
+需要重启。
+
+browser half 通过 host half 在 `ctx.webServer` 上注册的两条路由抵达 host：
+
+| 方法   | 路径                         | 请求体                    | 响应                                                              |
+| ------ | ---------------------------- | ------------------------- | ----------------------------------------------------------------- |
+| `GET`  | `/api/loop-agent/state`      | —                         | `{ enabled, attachedAgents, profile }`                            |
+| `POST` | `/api/loop-agent/enabled`    | `{ "enabled": boolean }`  | `{ enabled, attachedAgents, profile, path, changed }`             |
+
+`attachedAgents` 是当前 host scope 上正持有 driver 任务的 agent 实时计数。
+`path` 是写入落到的 sidecar 文件路径；`changed` 为 `false` 表示新值与
+文件原本一致，没发生实际写入。
 
 ## 配置
 
