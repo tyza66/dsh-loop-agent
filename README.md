@@ -73,13 +73,15 @@ false` (or remove the override) and restart.
 
 ## Where the state lives
 
-The in-app toggle writes to:
+The in-app controls (the enable switch and the continuation-prompt editor)
+write to:
 
 ```
 $DSH_HOME/profiles/<profile>/.dsh-loop-agent.json
 ```
 
-The file is plain JSON; a missing or unreadable file means "enabled":
+The file is plain JSON; a missing or unreadable file means "enabled, no
+prompt override":
 
 ```json
 { "disabled": false, "updatedAt": "2026-09-04T00:00:00.000Z" }
@@ -88,17 +90,30 @@ The file is plain JSON; a missing or unreadable file means "enabled":
 You can also hand-edit this file. The driver re-reads it on every phase
 boundary, so a change takes effect within ~2 seconds without a restart.
 
-The browser half reaches the host through two webserver routes the host
+The browser half reaches the host through three webserver routes the host
 half registers on `ctx.webServer`:
 
 | Method | Path | Body | Returns |
 | --- | --- | --- | --- |
-| `GET`  | `/api/loop-agent/state`   | — | `{ enabled, attachedAgents, profile }` |
-| `POST` | `/api/loop-agent/enabled` | `{ "enabled": boolean }` | `{ enabled, attachedAgents, profile, path, changed }` |
+| `GET`  | `/api/loop-agent/state`   | — | `{ enabled, attachedAgents, profile, continuation, defaultContinuation }` |
+| `POST` | `/api/loop-agent/enabled` | `{ "enabled": boolean }` | snapshot + `{ path, changed }` |
+| `POST` | `/api/loop-agent/continuation` | `{ "continuation": string }` | snapshot + `{ path, changed }` |
 
 `attachedAgents` is the live count of agents currently holding a running
-driver task on the host scope. `path` is the sidecar file the write
-landed in; `changed` is `false` when the new value matched the file.
+driver task on the host scope. `continuation` is the effective prompt
+(runtime override if set, else the configured default);
+`defaultContinuation` is the row-config default. `path` is the sidecar
+file the write landed in; `changed` is `false` when the new value
+matched the file.
+
+The state file may carry an override alongside `disabled`:
+
+```json
+{ "disabled": false, "continuation": "继续，并深度检查暗病，遇到暗病和缺陷就修复", "updatedAt": "2026-09-04T00:00:00.000Z" }
+```
+
+Remove `continuation` (or set it to an empty string) to fall back to the
+row-config default.
 
 ## Configure
 
@@ -108,7 +123,7 @@ your profile's user-layer patch:
 ```yaml
 - id: loop-runner
   config:
-    continuation: 'Please continue from where you left off. (Round {{round}})'
+    continuation: '继续，并深度检查暗病，遇到暗病和缺陷就修复'
     initialBackoffMs: 1000
     maxBackoffMs: 32000
     backoffFactor: 2
@@ -117,15 +132,17 @@ your profile's user-layer patch:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `continuation` | `Please continue from where you left off. (Round {{round}})` | Prompt template. Supports `{{lastAnswer}}` (previous round's assistant text), `{{round}}` (1-based; round 1 is the first continuation, not the user's first message), `{{task}}` (always empty in web mode). Unknown placeholders are left intact. |
+| `continuation` | `继续，并深度检查暗病，遇到暗病和缺陷就修复` | Default prompt template. Supports `{{lastAnswer}}` (previous round's assistant text), `{{round}}` (1-based; round 1 is the first continuation, not the user's first message), `{{task}}` (always empty in web mode). Unknown placeholders are left intact. A runtime override set from **Settings → Endless loop** wins over this default until it is cleared. |
 | `initialBackoffMs` | `1000` | Wait this long before the first retry of a failed round. |
 | `maxBackoffMs` | `32000` | Cap on the exponential growth. After the cap, every subsequent retry waits the cap. |
 | `backoffFactor` | `2` | Multiplier applied per consecutive failure. 2 = the standard 1s → 2s → 4s → 8s → 16s → 32s ladder. 1.5 = slower growth. |
 | `quiet` | `false` | When true, the loop only logs warnings and errors; clean runs are silent. Default false: each round boundary logs an info line so a long run leaves a visible trace. |
 
-Restart the web profile to apply config changes. Changing
-`continuation` mid-run affects only rounds queued after the restart; the
-current loop continues with the old template until the agent is disposed.
+Config changes to the retry fields need a profile restart to apply. The
+continuation template is re-read at every turn boundary: a runtime
+override lands on the very next round without a restart, and changing
+`config.continuation` in the patch affects rounds queued after the next
+restart.
 
 ## How it works
 

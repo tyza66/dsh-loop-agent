@@ -54,7 +54,7 @@
       # phase boundary.
       disabled: false
       config:
-        continuation: 'Please continue from where you left off. (Round {{round}})'
+        continuation: '继续，并深度检查暗病，遇到暗病和缺陷就修复'
         initialBackoffMs: 1000
         maxBackoffMs: 32000
         backoffFactor: 2

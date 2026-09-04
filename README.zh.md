@@ -62,13 +62,13 @@ dsh --profile web        # 重启；loop 现在关掉了
 
 ## 状态存在哪
 
-应用内开关写入：
+应用内的两个控件（开关 + 延续语编辑框）都写入：
 
 ```
 $DSH_HOME/profiles/<profile>/.dsh-loop-agent.json
 ```
 
-文件是普通 JSON；缺失或读不出来都视为「开启」：
+文件是普通 JSON；缺失或读不出来都视为「开启、无覆盖」：
 
 ```json
 { "disabled": false, "updatedAt": "2026-09-04T00:00:00.000Z" }
@@ -77,16 +77,27 @@ $DSH_HOME/profiles/<profile>/.dsh-loop-agent.json
 你也可以手改这个文件。driver 每个 phase 边界重读，~2 秒内就生效，不
 需要重启。
 
-browser half 通过 host half 在 `ctx.webServer` 上注册的两条路由抵达 host：
+browser half 通过 host half 在 `ctx.webServer` 上注册的三条路由抵达 host：
 
-| 方法   | 路径                         | 请求体                    | 响应                                                              |
-| ------ | ---------------------------- | ------------------------- | ----------------------------------------------------------------- |
-| `GET`  | `/api/loop-agent/state`      | —                         | `{ enabled, attachedAgents, profile }`                            |
-| `POST` | `/api/loop-agent/enabled`    | `{ "enabled": boolean }`  | `{ enabled, attachedAgents, profile, path, changed }`             |
+| 方法   | 路径                              | 请求体                       | 响应                                                               |
+| ------ | --------------------------------- | ---------------------------- | ------------------------------------------------------------------ |
+| `GET`  | `/api/loop-agent/state`           | —                            | `{ enabled, attachedAgents, profile, continuation, defaultContinuation }` |
+| `POST` | `/api/loop-agent/enabled`         | `{ "enabled": boolean }`     | snapshot + `{ path, changed }`                                     |
+| `POST` | `/api/loop-agent/continuation`    | `{ "continuation": string }` | snapshot + `{ path, changed }`                                     |
 
 `attachedAgents` 是当前 host scope 上正持有 driver 任务的 agent 实时计数。
-`path` 是写入落到的 sidecar 文件路径；`changed` 为 `false` 表示新值与
-文件原本一致，没发生实际写入。
+`continuation` 是**生效中**的延续语（有运行时覆盖就用覆盖，否则是 row 配置
+默认值）；`defaultContinuation` 是 row 配置默认值。`path` 是写入落到的
+sidecar 文件路径；`changed` 为 `false` 表示新值与文件原本一致，没发生实际
+写入。
+
+sidecar 文件可以同时带延续语覆盖：
+
+```json
+{ "disabled": false, "continuation": "继续，并深度检查暗病，遇到暗病和缺陷就修复", "updatedAt": "2026-09-04T00:00:00.000Z" }
+```
+
+删掉 `continuation` 字段（或设成空字符串）即回落到 row 配置默认。
 
 ## 配置
 
@@ -96,7 +107,7 @@ user-layer patch 里：
 ```yaml
 - id: loop-runner
   config:
-    continuation: 'Please continue from where you left off. (Round {{round}})'
+    continuation: '继续，并深度检查暗病，遇到暗病和缺陷就修复'
     initialBackoffMs: 1000
     maxBackoffMs: 32000
     backoffFactor: 2
@@ -105,14 +116,15 @@ user-layer patch 里：
 
 | 字段 | 默认 | 含义 |
 | --- | --- | --- |
-| `continuation` | `Please continue from where you left off. (Round {{round}})` | 延续语模板。支持 `{{lastAnswer}}`（上一轮 assistant 文本）、`{{round}}`（1-based；round 1 = 第一个延续语，**不是**用户第一条消息）、`{{task}}`（web 模式永远空）。未知占位符原样保留。 |
+| `continuation` | `继续，并深度检查暗病，遇到暗病和缺陷就修复` | 默认延续语模板。支持 `{{lastAnswer}}`（上一轮 assistant 文本）、`{{round}}`（1-based；round 1 = 第一个延续语，**不是**用户第一条消息）、`{{task}}`（web 模式永远空）。未知占位符原样保留。**Settings → 无尽模式**里设的运行时覆盖优先于这个默认值，直到被清掉。 |
 | `initialBackoffMs` | `1000` | 第一次失败重试前等多少毫秒。 |
 | `maxBackoffMs` | `32000` | 指数增长的上限。到顶后所有后续重试都等 cap。 |
 | `backoffFactor` | `2` | 每次连续失败的乘数。2 = 1s→2s→4s→8s→16s→32s 标准阶梯；1.5 = 增长更慢。 |
 | `quiet` | `false` | true = 只 log warn/error；false = 每个 round 边界写一行 info，长跑有可见痕迹。 |
 
-重启 web profile 后配置生效。改 `continuation` 不会影响当前正在 loop
-的 agent——它继续用旧模板直到 session 被销毁。
+重试相关的字段要重启 profile 才生效。延续语模板每个 turn 边界都重读：
+设置页的运行时覆盖**下一轮**就生效，不用重启；改 patch 里的
+`config.continuation` 则影响下一次重启后排队的新 round。
 
 ## 实现原理
 
