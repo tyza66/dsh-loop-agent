@@ -2,6 +2,8 @@
 
 [English](README.md) | [中文](README.zh.md)
 
+<img width="1578" height="1510" alt="image" src="https://github.com/user-attachments/assets/6838a4e9-5dd2-49d5-a455-d41788e1fadd" />
+
 A DSH profile bundle for the **web profile** that enables **on-demand endless
 loops** in chat sessions: sessions do not automatically loop. Instead, you
 explicitly activate each session by typing `/forever` in its chat box. Once
