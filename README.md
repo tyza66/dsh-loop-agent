@@ -17,10 +17,10 @@ loop's continuation lands in `next-turn` (followup), and the inbox's
 The loop never exits on its own. Any failure — turn-level LLM error, a
 thrown exception, even a transient context overflow — falls through to
 exponential backoff and the previous round's prompt is re-sent. The only
-exit is the session being torn down (the web UI's stop button, or the
-profile being restarted). The loop is paired with 80% auto-compaction and
-the `/compact` command, so a long run is bounded by neither tokens nor
-rounds; only your willingness to let it run.
+exit is the agent leaving the live registry (the web UI stopping or
+deleting the session, or the profile being restarted). The loop is paired
+with 80% auto-compaction and the `/compact` command, so a long run is
+bounded by neither tokens nor rounds; only your willingness to let it run.
 
 ## Install
 
@@ -28,9 +28,14 @@ rounds; only your willingness to let it run.
 dsh plugin --profile web add https://github.com/tyza66/dsh-loop-agent
 ```
 
-Then start the web profile as usual. Every new agent is automatically
-attached to the loop. User messages still go through normally — they will
-always be processed before the loop's queued continuation.
+Then start the web profile as usual. A supervisor on the host polls the
+live agent registry once per second and attaches a driver to every agent —
+new conversations take effect immediately, and restored historical
+sessions are re-attached after a restart too (but a session that has been
+idle longer than `idleGraceMs` waits for the user to speak first instead
+of auto-continuing and burning tokens). User messages still go through
+normally — they will always be processed before the loop's queued
+continuation.
 
 The bundle also ships a browser half: an **Endless loop** entry in the
 web UI's Settings sidebar. The switch there is the everyday on/off
@@ -66,10 +71,10 @@ The user layer is applied **after** the bundle's patch, so the row-level
 dsh --profile web        # restart; the loop is now off
 ```
 
-`disabled` only stops new agents from being attached; it does not kill
-agents that are already looping. Existing loops wind down on their next
-`agent/disposed` / `session/disposed`. To re-enable, set `disabled:
-false` (or remove the override) and restart.
+`disabled` only stops new continuations from being queued; it does not
+kill agents that are already looping. Existing loops wind down the next
+time the supervisor sees the agent leave the registry. To re-enable, set
+`disabled: false` (or remove the override) and restart.
 
 ## Where the state lives
 
@@ -136,6 +141,7 @@ your profile's user-layer patch:
 | `initialBackoffMs` | `1000` | Wait this long before the first retry of a failed round. |
 | `maxBackoffMs` | `32000` | Cap on the exponential growth. After the cap, every subsequent retry waits the cap. |
 | `backoffFactor` | `2` | Multiplier applied per consecutive failure. 2 = the standard 1s → 2s → 4s → 8s → 16s → 32s ladder. 1.5 = slower growth. |
+| `idleGraceMs` | `300000` | On every dsh boot the supervisor re-attaches every restored historical session. If a session's most recent event is older than this window (default 5 minutes), the loop waits for a fresh user message before auto-continuing, so a restart cannot set every old session burning tokens at once. `0` disables the guard (stale sessions resume immediately). |
 | `quiet` | `false` | When true, the loop only logs warnings and errors; clean runs are silent. Default false: each round boundary logs an info line so a long run leaves a visible trace. |
 
 Config changes to the retry fields need a profile restart to apply. The
@@ -157,9 +163,10 @@ default:
 - `tool-result-pruner` — the pruner that keeps overgrown tool results
   from blocking the compactor's threshold.
 
-It then inserts one new row, `loop-runner`, whose host-side `apply`
-registers an `agent/created` hook on the host scope. Every new agent is
-given a fire-and-forget driver task that:
+It then inserts one new row, `loop-runner`. Its host-side `apply` starts a
+**registry supervisor** (`ctx.effect` + a 1-second `setInterval`) that
+polls `ctx.agents.list()` and gives every not-yet-attached agent a
+fire-and-forget driver task that:
 
 1. `await agent.whenIdle()` — wait for the current turn (if any) to finish.
 2. Slice the durable session log between the previous `turn/end` and the
@@ -169,6 +176,22 @@ given a fire-and-forget driver task that:
 4. Otherwise, render the continuation template and `agent.followup(...)`
    it into the agent's `next-turn` inbox.
 5. Loop back to step 1.
+
+**Why polling instead of an `agent/created` event**: every dsh agent
+lifecycle event (`agent/created` / `agent/disposed` / `session/disposed`)
+is scope-filtered (`this: Scoped<Agent>`, see `dsh-agent`'s
+runtime-types) — it dispatches only to listeners registered inside that
+agent's own scope chain. A third-party plugin sitting on the root context
+never receives `ctx.on("agent/created", ...)`. The official
+`dsh-agent-loop` can rely on those events only because it IS the agent
+factory (`agents.setFactory()`) and registers inside each agent's scope.
+The only public surface a root-context plugin can depend on is the agent
+registry itself — `ctx.agents.list()` shows every live agent regardless
+of scope — so the supervisor polls it once a second and de-duplicates by
+agent reference (`agent.whenIdle()` / `agent.followup()` are public
+methods and need no scope). An agent leaving the registry is likewise
+discovered by polling (it disappears from `list()` → the driver is
+disarmed), which replaces the never-delivered `agent/disposed` signal.
 
 The `agent/inbox/inserted` and `next-step` priority mechanisms of the
 core agent inbox guarantee that user messages are always processed

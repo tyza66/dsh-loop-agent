@@ -12,9 +12,10 @@
 inbox 的 `claim("next-turn")` 顺序永远先取 `next-step`。
 
 loop 永不主动退出。任何失败——LLM 错误、throw、context 临时超限——都
-进入指数 backoff 并重发上一轮的 prompt。唯一的退出是 session 被销毁
-（web UI 的停止按钮，或 profile 重启）。loop 配 80% 自动 compact + `/compact`
-命令，长跑的边界不是 token 也不是轮数——只看你愿不愿意让它跑。
+进入指数 backoff 并重发上一轮的 prompt。唯一的退出是 agent 离开 live
+registry（web UI 停止 / 删会话，或 profile 重启）。loop 配 80% 自动
+compact + `/compact` 命令，长跑的边界不是 token 也不是轮数——只看你
+愿不愿意让它跑。
 
 ## 安装
 
@@ -22,8 +23,11 @@ loop 永不主动退出。任何失败——LLM 错误、throw、context 临时�
 dsh plugin --profile web add https://github.com/tyza66/dsh-loop-agent
 ```
 
-之后照常启动 web profile。每个新 agent 都会被 loop 自动 attach。用户消息
-照常处理——总是先于 loop 注入的延续语被消费。
+之后照常启动 web profile。host 上的 supervisor 每秒轮询一次 live agent
+registry，自动给每个 agent 挂上 driver——**新开的对话即时生效**，重启
+后恢复的历史会话也会被重新挂上（但超过 `idleGraceMs` 没动静的旧会话
+会等用户先开口，不会自动续烧 token）。用户消息照常处理——总是先于
+loop 注入的延续语被消费。
 
 bundle 同时带一个 browser half：在 web UI 的 Settings 侧栏里挂一个
 **无尽模式（Endless loop）** 入口。那个开关是日常 on/off 控件，patch 文件
@@ -56,8 +60,8 @@ user layer 在 bundle 的 patch 之后 apply，所以 row 级别的 `disabled: t
 dsh --profile web        # 重启；loop 现在关掉了
 ```
 
-`disabled` 只阻止新 agent 被 attach，不杀已经在 loop 的。已存在的 loop
-会在下一次 `agent/disposed` / `session/disposed` 自然收尾。要重新打开，
+`disabled` 只阻止新的延续语被排队，不杀已经在 loop 的。已存在的 loop
+会在 supervisor 下一次发现 agent 离开 registry 时自然收尾。要重新打开，
 把 `disabled` 设回 `false`（或删掉覆盖）然后重启。
 
 ## 状态存在哪
@@ -120,6 +124,7 @@ user-layer patch 里：
 | `initialBackoffMs` | `1000` | 第一次失败重试前等多少毫秒。 |
 | `maxBackoffMs` | `32000` | 指数增长的上限。到顶后所有后续重试都等 cap。 |
 | `backoffFactor` | `2` | 每次连续失败的乘数。2 = 1s→2s→4s→8s→16s→32s 标准阶梯；1.5 = 增长更慢。 |
+| `idleGraceMs` | `300000` | 每个 dsh 启动时 supervisor 会把恢复的历史会话全部重新挂上 loop。会话最近一条事件老于这个窗口（默认 5 分钟）时，loop **先等用户发新消息**再开始续，防止重启后一堆旧会话同时烧 token。`0` 关闭守卫（旧会话也立即续）。 |
 | `quiet` | `false` | true = 只 log warn/error；false = 每个 round 边界写一行 info，长跑有可见痕迹。 |
 
 重试相关的字段要重启 profile 才生效。延续语模板每个 turn 边界都重读：
@@ -136,9 +141,10 @@ user-layer patch 里：
 - `tool-result-pruner` — 修剪过大的 tool result，防止单个超大结果卡住
   compact 阈值判断。
 
-然后插入一个新 row `loop-runner`，它的 host-side `apply` 在 host 平面
-注册 `agent/created` hook。每个新 agent 拿到一个 fire-and-forget driver
-任务，循环：
+然后插入一个新 row `loop-runner`。它的 host-side `apply` 启动一个
+**registry supervisor**（`ctx.effect` + 每秒 `setInterval`），轮询
+`ctx.agents.list()`，对每个还没挂上的 agent 启动一个 fire-and-forget
+driver 任务，循环：
 
 1. `await agent.whenIdle()` — 等当前 turn（如果有）跑完
 2. 切片 durable session log，从上轮 `turn/end` 到当前 tail，取出本轮
@@ -146,6 +152,19 @@ user-layer patch 里：
 3. 本轮以错误结束 → backoff 并重发上一轮 prompt
 4. 否则渲染延续语模板，`agent.followup(...)` 推进 agent 的 `next-turn` inbox
 5. 回到第 1 步
+
+**为什么是轮询而不是 `agent/created` 事件**：dsh 的 agent 生命周期事件
+（`agent/created` / `agent/disposed` / `session/disposed`）全部是
+**scope-filtered** 的（`this: Scoped<Agent>`，见 `dsh-agent` 的
+runtime-types）——它们只分发给注册在**那个 agent 自己的 scope 链内**的
+监听器。第三方插件挂在根 context 上，`ctx.on("agent/created", ...)`
+永远收不到。官方 `dsh-agent-loop` 之所以能用这些事件，是因为它自己就是
+agent factory（`agents.setFactory()`），注册点在每个 agent scope 内部。
+根 context 插件能依赖的只有公开注册表 `ctx.agents.list()`（live agent
+一律可见，与 scope 无关），所以 supervisor 每 1 秒轮询它、用 agent
+引用做去重（`agent.whenIdle()` / `agent.followup()` 都是公开方法，
+不需要 scope）。同理，agent 离开 registry 也靠轮询发现（list 里消失 →
+disarm driver），这是 `agent/disposed` 的替代。
 
 core agent inbox 的 `agent/inbox/inserted` 和 `next-step` 优先级机制
 保证用户消息永远先于 loop 注入的延续语被处理。driver 只在
