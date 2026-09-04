@@ -245,7 +245,12 @@ fire-and-forget driver task that:
 
 1. `await agent.whenIdle()` — wait for the current turn (if any) to finish.
 2. Slice the durable session log between the previous `turn/end` and the
-   current tail to recover the round's assistant text.
+   current tail to recover the round's assistant text. A driver born over
+   an existing session (attach, restart, or re-enable after a stop) seeds
+   its boundary past stale `aborted`/`interrupted` turn/ends — so re-enable
+   never re-halts on a stop that predates the driver — and starts consuming
+   at the second-to-last finished round, so `{{lastAnswer}}` holds one
+   round's text, not the whole transcript.
 3. If the round ended in an error, back off and re-send the previous
    round's prompt.
 4. Otherwise, render the continuation template and `agent.followup(...)`

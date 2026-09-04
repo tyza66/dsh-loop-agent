@@ -34,9 +34,9 @@ const regionStart = src.indexOf("const RECOMMENDED_SUFFIX");
 const regionEnd = blockEndAt("function hasNewerUserActivity");
 const helperRegion = src.slice(regionStart, regionEnd);
 
-const mod = `${helperRegion}\nexport { RECOMMENDED_SUFFIX, isRecommendedLabel, stripRecommendedSuffix, FREE_TEXT_AUTO_ANSWER, pickAutoAnswers, renderEscalationPrompt, lastUserMessageText, hasNewerUserActivity };`;
+const mod = `${helperRegion}\nexport { RECOMMENDED_SUFFIX, isRecommendedLabel, stripRecommendedSuffix, FREE_TEXT_AUTO_ANSWER, pickAutoAnswers, renderEscalationPrompt, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary };`;
 const tmpUrl = "data:text/javascript;base64," + Buffer.from(mod).toString("base64");
-const { pickAutoAnswers, renderEscalationPrompt, FREE_TEXT_AUTO_ANSWER, lastUserMessageText, hasNewerUserActivity } = await import(tmpUrl);
+const { pickAutoAnswers, renderEscalationPrompt, FREE_TEXT_AUTO_ANSWER, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary } = await import(tmpUrl);
 
 let pass = 0;
 let fail = 0;
@@ -58,6 +58,10 @@ check("plan-review approve wins even when not first", pickAutoAnswers([{ id: "q1
   { answers: [{ id: "q1", selected: ["Approve plan"] }] });
 check("multiSelect batch", pickAutoAnswers([{ id: "q1", multiSelect: true, options: [{ label: "one" }, { label: "two (Recommended)" }] }]),
   { answers: [{ id: "q1", selected: ["two"] }] });
+check("label-less option falls back to empty string, not undefined", pickAutoAnswers([{ id: "q1", options: [{ description: "no label" }] }]),
+  { answers: [{ id: "q1", selected: [""] }] });
+check("mixed labeled + label-less: labeled wins", pickAutoAnswers([{ id: "q1", options: [{ label: "A (推荐)" }, { description: "no label" }] }]),
+  { answers: [{ id: "q1", selected: ["A"] }] });
 
 console.log("## pickAutoAnswers — free text");
 check("free text w/ answerFreeText=true -> custom grant", pickAutoAnswers([{ id: "q1", question: "which dir?" }], { answerFreeText: true }),
@@ -107,6 +111,39 @@ check("no user/message at all -> null", lastUserMessageText([{ seq: 1, type: "as
 // The exact legacy buggy read (data.message.content) must NOT satisfy the
 // function — a stale-wrapper-only event yields nothing.
 check("stale .message wrapper (pre-bug shape) does not match", lastUserMessageText([{ seq: 1, type: "user/message", data: { message: { content: [{ type: "text", text: "stale" }] } } }], 0, 99), null);
+
+console.log("## hasUserMessage — plugin injections do not count as a real user");
+const um = (seq, text, kind = "user") => ({ seq, type: "user/message", data: { content: [{ type: "text", text }], source: { kind } } });
+check("real user message -> true", hasUserMessage([um(1, "你好")]), true);
+check("loop continuation (source user) -> true", hasUserMessage([um(1, "继续", "user")]), true);
+check("empty log -> false", hasUserMessage([]), false);
+check("only plugin snapshots -> false", hasUserMessage([um(1, "<runtime>", "plugin"), um(2, "<skill>", "plugin")]), false);
+check("plugin first, then real user -> true", hasUserMessage([um(1, "<runtime>", "plugin"), um(2, "你好")]), true);
+check("non-message events only -> false", hasUserMessage([{ seq: 1, type: "turn/start", data: {} }]), false);
+
+console.log("## seedInitialBoundary — fresh attach over pre-existing history");
+const te = (seq, kind) => ({ seq, type: "turn/end", data: { reason: { kind } } });
+const am = (seq) => ({ seq, type: "assistant/message", data: { message: { content: [{ type: "text", text: "x" }] } } });
+// fresh empty session
+check("empty log -> 0", seedInitialBoundary([]), 0);
+// single completed round: boundary 0 so the whole (single-round) history is round 1
+check("single completed round -> 0", seedInitialBoundary([am(1), te(5, "completed")]), 0);
+// two completed rounds: start at the first so only the LAST round feeds round 1
+check("two completed rounds -> first turn/end seq", seedInitialBoundary([te(3, "completed"), am(4), te(9, "completed")]), 3);
+// last round errored: retry target preserved (boundary = second-to-last end)
+check("completed then error -> second-to-last seq", seedInitialBoundary([te(3, "completed"), am(4), te(9, "error")]), 3);
+// trailing aborted (user stop): consume it, do NOT re-halt on re-enable
+check("completed then aborted tail -> past the abort", seedInitialBoundary([te(3, "completed"), am(4), te(9, "aborted")]), 10);
+check("aborted only -> past the abort", seedInitialBoundary([te(3, "aborted")]), 4);
+// trailing interrupted (crash-orphaned): consume it too
+check("completed then interrupted tail -> past the interrupt", seedInitialBoundary([te(3, "completed"), te(9, "interrupted")]), 10);
+// completed -> aborted -> completed again: the pre-stop round is consumed;
+// boundary sits past the abort so only the post-stop round feeds round 1
+check("completed aborted completed -> past the abort", seedInitialBoundary([te(3, "completed"), te(9, "aborted"), am(10), te(15, "completed")]), 10);
+// all stale tail with two drivable before it: boundary past stale, not before it
+check("stale tail after two drivable -> past the stale tail", seedInitialBoundary([te(3, "completed"), te(9, "error"), te(15, "aborted")]), 16);
+// interleaved stale in the middle does not advance past later drivable turns
+check("aborted in middle, later completed -> second-to-last drivable", seedInitialBoundary([te(3, "aborted"), te(5, "completed"), te(9, "completed")]), 5);
 
 console.log("## hasNewerUserActivity — mid-backoff interjection");
 const act = [

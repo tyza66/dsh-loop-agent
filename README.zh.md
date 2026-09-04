@@ -198,7 +198,11 @@ driver 任务，循环：
 
 1. `await agent.whenIdle()` — 等当前 turn（如果有）跑完
 2. 切片 durable session log，从上轮 `turn/end` 到当前 tail，取出本轮
-   assistant 文本
+   assistant 文本。挂到已有会话上的 driver（新 attach / 重启 / 停止后
+   重新启用）会先播种边界：跳过历史里陈旧的 `aborted`/`interrupted`
+   turn/end（重新启用不会立刻被之前的停止再次 halt），并从倒数第二个
+   正常结束的轮次开始消费——所以重启后第一轮的 `{{lastAnswer}}` 只有
+   上一轮文本，而不是整个历史。
 3. 本轮以错误结束 → backoff 并重发上一轮 prompt
 4. 否则渲染延续语模板，`agent.followup(...)` 推进 agent 的 `next-turn` inbox
 5. 回到第 1 步

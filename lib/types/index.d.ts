@@ -57,6 +57,27 @@ export interface Config {
    * line so a long run leaves a visible trace in `dsh` logs.
    */
   quiet: boolean;
+  /**
+   * On every dsh boot the supervisor re-attaches every restored
+   * historical session. If a session's most recent event is older than
+   * this window, the loop waits for a fresh user message before
+   * auto-continuing. 0 disables the guard.
+   */
+  idleGraceMs: number;
+  /** Auto-answer questions from armed loop agents (recommended/plan-review
+   * first-option picks). False restores the normal question UI. */
+  autoAnswerQuestions: boolean;
+  /** Auto-answer free-text questions with the standing autonomy grant.
+   * Requires `autoAnswerQuestions`. */
+  autoAnswerFreeText: boolean;
+  /** Auto-approve one-shot actions (`allowed-once`) for armed loop agents. */
+  autoApproveActions: boolean;
+  /**
+   * After this many consecutive failures of the SAME retry prompt, switch
+   * to an escalation prompt carrying the latest error instead of resending
+   * the identical text. 0 disables escalation (pure identical resends).
+   */
+  escalateAfterFailures: number;
 }
 
 export declare const Config: z<Config>;
