@@ -176,7 +176,7 @@ half registers on `ctx.webServer`:
 
 | Method | Path | Body | Returns |
 | --- | --- | --- | --- |
-| `GET`  | `/api/loop-agent/state`   | — | `{ enabled, attachedAgents, profile, continuation, defaultContinuation }` |
+| `GET`  | `/api/loop-agent/state`   | — | `{ version, enabled, attachedAgents, profile, continuation, defaultContinuation }` |
 | `POST` | `/api/loop-agent/enabled` | `{ "enabled": boolean }` | snapshot + `{ path, changed }` |
 | `POST` | `/api/loop-agent/continuation` | `{ "continuation": string }` | snapshot + `{ path, changed }` |
 

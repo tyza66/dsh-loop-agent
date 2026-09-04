@@ -135,7 +135,7 @@ browser half 通过 host half 在 `ctx.webServer` 上注册的三条路由抵达
 
 | 方法   | 路径                              | 请求体                       | 响应                                                               |
 | ------ | --------------------------------- | ---------------------------- | ------------------------------------------------------------------ |
-| `GET`  | `/api/loop-agent/state`           | —                            | `{ enabled, attachedAgents, profile, continuation, defaultContinuation }` |
+| `GET`  | `/api/loop-agent/state`           | —                            | `{ version, enabled, attachedAgents, profile, continuation, defaultContinuation }` |
 | `POST` | `/api/loop-agent/enabled`         | `{ "enabled": boolean }`     | snapshot + `{ path, changed }`                                     |
 | `POST` | `/api/loop-agent/continuation`    | `{ "continuation": string }` | snapshot + `{ path, changed }`                                     |
 
