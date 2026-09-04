@@ -2,9 +2,10 @@
 
 [English](README.md) | [中文](README.zh.md)
 
-一个 DSH profile bundle（**web profile**），把每个 agent 变成**同会话无限循环**：
-每次模型给出最终答案后，loop 自动在下一轮 turn 边界注入一句用户可配置的
-"延续语"，永远继续。
+一个 DSH profile bundle（**web profile**），为聊天会话启用**按需无尽循环**：
+会话不会自动循环。相反，你在聊天框中输入 `/forever` 来显式激活某个会话。
+一旦激活，loop 就会在每次模型给出答案后自动注入一句用户可配置的"延续语"，
+永远继续。
 
 整个 run 期间，Agent 和 Session 都只有一个——每轮都看到完整累积的对话历史，
 只有"下一句 user message"被模板替换。**用户消息优先**，由三层机制保证：
@@ -14,6 +15,12 @@
 完队列才进入空闲，而 loop 只在 `whenIdle()` 之后、且确认 inbox 里没有
 真人消息 pending 时才排下一条延续语——**只要消息列表里有用户输入，它
 一定先于下一条延续语执行；没有用户输入，延续语才接管，无限继续**。
+
+**按需激活**：会话在全局开关打开时不会自动开始循环。相反，它们会停在
+"等待激活"状态。在任意会话的聊天框中输入 `/forever`（大小写不敏感，忽略
+前后空格）即可激活该会话的无限循环。每个会话必须单独激活。全局开关是前提
+条件：`/forever` 仅在开关为 ON 时有效。关闭开关会立即停止所有正在运行的
+循环并停住所有会话。
 
 loop 永不主动退出。任何失败——LLM 错误、throw、context 临时超限——都
 进入指数 backoff 并把上一轮触发失败的 prompt **真的重发**（重发永远不
@@ -37,32 +44,41 @@ dsh plugin --profile web add https://github.com/tyza66/dsh-loop-agent
 ```
 
 之后照常启动 web profile。host 上的 supervisor 每秒轮询一次 live agent
-registry，**只**给顶层（root）agent 挂上 driver——**新开的对话即时生效**，
-重启后恢复的历史会话也会被重新挂上（但超过 `idleGraceMs` 没动静的旧
-会话会等用户先开口，不会自动续烧 token）。**子 agent 不挂 loop**（默认
-不开启无尽模式）：任何在父 agent scope 下被创建的、用户看不见的助手
-session——例如 dsh-subagent 派生的子任务、agent 内部 helper——都不挂
-driver、不开 auto-answer、不开 auto-approve。用户消息照常处理——总是先
-于 loop 注入的延续语被消费。
+registry，**只**给顶层（root）agent 挂上 driver——但**不会自动启动循环**，
+而是把每个会话停在"等待激活"状态。**会话需要通过 `/forever` 命令显式激活**。
+全局开关（Settings 中的开关）必须为 ON，`/forever` 才有效。**子 agent 不挂
+loop**（默认不开启无尽模式）：任何在父 agent scope 下被创建的、用户看不见的
+助手 session——例如 dsh-subagent 派生的子任务、agent 内部 helper——都不挂
+driver、不开 auto-answer、不开 auto-approve。用户消息照常处理——总是先于
+loop 注入的延续语被消费。
 
 bundle 同时带一个 browser half：在 web UI 的 Settings 侧栏里挂一个
-**无尽模式（Endless loop）** 入口。那个开关是日常 on/off 控件，patch 文件
-覆盖是兜底逃生口。详见 [关闭](#关闭)。
+**无尽模式（Endless loop）** 入口。那个开关控制 `/forever` 激活是否可用；
+patch 文件覆盖是兜底逃生口。详见 [关闭](#关闭)。
+
+## 激活会话
+
+全局开关为 ON 时，在任意会话的聊天框中输入 `/forever` 即可激活该会话的
+无尽循环。命令大小写不敏感，忽略前后空格（`/forever`、`/FOREVER`、
+`  /forever  ` 都有效）。每个会话必须单独激活。一旦激活，会话将在每次
+assistant 回答后使用延续语自动继续。
+
+要停止正在运行的会话，点击其**停止**按钮。要稍后重新激活，再次输入
+`/forever` 即可。
 
 ## 关闭
 
 **应用内（推荐）** — 进 **Settings → 无尽模式**，拨开关。插件不卸载；
-driver 轮询 `$DSH_HOME/profiles/<profile>/.dsh-loop-agent.json` 这个
-sidecar JSON，关掉后 ~2 秒内就停止排队延续语；再拨回来，同一批 agent
-立刻恢复 loop。无需重启 profile，下次 turn 边界就生效。
+关闭开关会**立即停止所有正在运行的循环**，解除所有 driver 的激活，并停住
+所有会话（它们需要重新输入 `/forever` 才能在开关重新打开后激活）。无需
+重启 profile。
 
 **单场叫停** — 某一场对话跑飞了，直接点对话里的**停止**按钮。那场立即
 停：driver 看到 `aborted` 收尾就收手，之后这场回到普通一问一答，开关
-仍保持"开"，其他会话不受影响。想让这一场重新进入无尽模式：
+仍保持"开"，其他已激活的会话不受影响。想让这一场重新进入无尽模式：
 - 在聊天框输入 `/forever`（大小写不敏感，前后空格忽略）——仅在全局开关
   打开时生效
-- 把开关**关掉再打开**（enable 时会重新武装所有被停止的会话）
-- 重启 profile
+- 重启 profile（所有会话需要重新输入 `/forever`）
 
 **归档即停** — 把会话归档（会话列表里的「归档会话」）同样立即停止它的
 loop，并取消它正在进行的回复。归档不销毁 agent/session，只是从所有

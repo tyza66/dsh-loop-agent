@@ -2,10 +2,11 @@
 
 [English](README.md) | [中文](README.zh.md)
 
-A DSH profile bundle for the **web profile** that turns every agent into an
-**endless same-session loop**: after every final assistant answer, the loop
-automatically injects a user-configurable continuation prompt at the next
-turn boundary, forever.
+A DSH profile bundle for the **web profile** that enables **on-demand endless
+loops** in chat sessions: sessions do not automatically loop. Instead, you
+explicitly activate each session by typing `/forever` in its chat box. Once
+activated, the loop automatically injects a user-configurable continuation
+prompt after each assistant answer, forever.
 
 The same Agent and the same Session live for the whole run, so every round
 sees the full accumulating transcript — only the *next* user message is
@@ -19,6 +20,14 @@ a continuation after `whenIdle()` **and** after checking that no real
 user message is pending in the inbox — a queued user input always runs
 before the next continuation does. If nothing human is queued, the
 continuation runs and the loop keeps going forever.
+
+**On-demand activation**: sessions do not automatically start looping when
+the global switch is turned on. Instead, they park in a "waiting for
+activation" state. Type `/forever` (case-insensitive, whitespace-tolerant)
+in any session's chat box to activate its endless loop. Each session must
+be activated individually. The global switch is a prerequisite: `/forever`
+only works when the switch is ON. Turning the switch OFF immediately halts
+all running loops and parks all sessions.
 
 The loop never exits on its own. Any failure — turn-level LLM error, a
 thrown exception, even a transient context overflow — falls through to
@@ -50,42 +59,49 @@ dsh plugin --profile web add https://github.com/tyza66/dsh-loop-agent
 ```
 
 Then start the web profile as usual. A supervisor on the host polls the
-live agent registry once per second and attaches a driver to every
-top-level (root) agent — new conversations take effect immediately, and
-restored historical sessions are re-attached after a restart too (but a
-session that has been idle longer than `idleGraceMs` waits for the user
-to speak first instead of auto-continuing and burning tokens).
-Subagents (anything spawned under a parent owner context — dsh-subagent
-tasks, in-agent helpers, ...) are left alone: no driver, no auto-answer,
-no auto-approve; they are scoped, ephemeral helpers, not conversations
-the user can see in the message list. User messages still go through
-normally — they will always be processed before the loop's queued
-continuation.
+live agent registry once per second and parks every top-level (root) agent
+in a "waiting for activation" state. **Sessions do not automatically loop**
+— they require explicit activation via the `/forever` command in each
+session's chat box. The global switch in Settings must be ON for `/forever`
+to work. Subagents (anything spawned under a parent owner context —
+dsh-subagent tasks, in-agent helpers, ...) are left alone: no driver, no
+auto-answer, no auto-approve; they are scoped, ephemeral helpers, not
+conversations the user can see in the message list.
 
 The bundle also ships a browser half: an **Endless loop** entry in the
-web UI's Settings sidebar. The switch there is the everyday on/off
-control; the patch-file override is the escape hatch. See [Disable](#disable).
+web UI's Settings sidebar. The switch there controls whether `/forever`
+activation is available; the patch-file override is the escape hatch.
+See [Disable](#disable).
+
+## Activate a session
+
+Once the global switch is ON, type `/forever` in any session's chat box to
+activate its endless loop. The command is case-insensitive and tolerates
+whitespace (`/forever`, `/FOREVER`, `  /forever  ` all work). Each session
+must be activated individually. Once activated, the session will
+automatically continue after each assistant answer using the continuation
+prompt.
+
+To stop a running session, click its **stop** button. To re-activate it
+later, type `/forever` again.
 
 ## Disable
 
 **In-app (recommended)** — open **Settings → Endless loop** and flip the
-switch. The plugin stays mounted; the driver polls a sidecar JSON at
-`$DSH_HOME/profiles/<profile>/.dsh-loop-agent.json` and stops queuing
-continuations within ~2 seconds of the toggle. Flipping it back resumes
-the loop on the same agents. No profile restart is required; the change
-takes effect on the next turn boundary.
+switch. The plugin stays mounted; turning the switch OFF immediately halts
+all running loops, disarms all drivers, and parks all sessions (they will
+need `/forever` to re-activate after you turn the switch back ON). No
+profile restart is required.
 
 **Stop one conversation** — if a single conversation is running away, click
 its **stop** button. That conversation halts on the spot: the driver sees
 the `aborted` turn/end and stops instead of queueing the next continuation,
 so the conversation goes back to plain question-and-answer while the global
-switch stays on and every other conversation keeps looping. To re-arm that
-conversation into the endless run:
+switch stays on and every other activated conversation keeps looping. To
+re-arm that conversation into the endless run:
 - Type `/forever` in the chat box (case-insensitive, leading/trailing
   whitespace ignored) — only works when the global switch is on
-- Toggle the switch **off and on** (enable sweeps halted conversations and
-  reattaches drivers)
-- Restart the profile
+- Restart the profile (all sessions will need `/forever` again)
 
 **Archive stops it too** — archiving a conversation (the **Archive session**
 action in its context menu) halts its loop just as fast, and cancels whatever
@@ -95,9 +111,8 @@ the loop would keep spending tokens on a conversation you can no longer see.
 The supervisor compares each live agent against `dsh-workspace`'s
 `archivedSessionIds` every second: archived sessions never get a driver, and
 a driver whose session was just archived is disarmed on the spot. Unarchiving
-does not auto-resume: to re-arm, type `/forever` after unarchiving, toggle
-the loop **off and on** (sessions still archived are skipped by the re-arm
-sweep), or restart the profile.
+does not auto-resume: to re-arm, type `/forever` after unarchiving (requires
+the global switch to be ON).
 
 **Hard kill (escape hatch)** — to take the plugin down entirely (no
 settings section, no per-agent loop tasks, no HTTP routes), add a row
