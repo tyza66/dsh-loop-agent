@@ -38,6 +38,9 @@
     "LICENSE"
   ],
   "license": "MIT",
+  "scripts": {
+    "test": "node test/unit.mjs"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
