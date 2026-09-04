@@ -1,7 +1,7 @@
 {
   "name": "@tyza66/dsh-loop-agent",
   "description": "DSH web profile bundle that turns every agent into an endless same-session loop: after every final answer, the loop injects a user-configurable continuation prompt, retries with exponential backoff on any failure, and re-enables 80% auto-compaction plus the /compact command.",
-  "version": "1.0.20260905",
+  "version": "1.0.20260906",
   "publishConfig": {
     "access": "public"
   },
