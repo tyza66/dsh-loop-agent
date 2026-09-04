@@ -2,6 +2,8 @@
 
 [English](README.md) | [中文](README.zh.md)
 
+<img width="1578" height="1510" alt="image" src="https://github.com/user-attachments/assets/21563417-bcbc-4fc1-9be6-c378d59647ce" />
+
 一个 DSH profile bundle（**web profile**），为聊天会话启用**按需无尽循环**：
 会话不会自动循环。相反，你在聊天框中输入 `/forever` 来显式激活某个会话。
 一旦激活，loop 就会在每次模型给出答案后自动注入一句用户可配置的"延续语"，
