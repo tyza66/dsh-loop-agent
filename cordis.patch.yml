@@ -39,14 +39,19 @@
 - insert:
     - id: loop-runner
       name: '@tyza66/dsh-loop-agent'
-      # `disabled` controls whether the row mounts at all. Default false:
-      # the loop attaches to every new agent on the host scope as soon as
-      # the bundle is installed. To turn the loop off without uninstalling
-      # the bundle, add `- id: loop-runner, disabled: true` to your
-      # profile's own cordis.patch.yml (the user layer comes after this
-      # bundle's patch and overrides by row id). The change takes effect
-      # on the next profile start; existing agents keep running until
-      # their session is torn down.
+      # `disabled` is a coarse, full-unmount switch: when true the plugin
+      # fiber never starts, the driver never attaches to any agent, and
+      # the webserver routes the settings panel talks to are absent. Use
+      # it for a hard kill (e.g. to drop the bundle from a profile
+      # without uninstalling it). Default false.
+      #
+      # For the everyday on/off, prefer the in-app Endless-loop switch
+      # under Settings — it flips a sidecar JSON the driver polls every
+      # phase, so the loop becomes inert without unmounting the plugin.
+      # That sidecar lives at
+      #   $DSH_HOME/profiles/<profile>/.dsh-loop-agent.json
+      # and can also be edited by hand; the driver re-reads it on every
+      # phase boundary.
       disabled: false
       config:
         continuation: 'Please continue from where you left off. (Round {{round}})'

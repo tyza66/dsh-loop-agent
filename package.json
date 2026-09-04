@@ -1,7 +1,7 @@
 {
   "name": "@tyza66/dsh-loop-agent",
   "description": "DSH web profile bundle that turns every agent into an endless same-session loop: after every final answer, the loop injects a user-configurable continuation prompt, retries with exponential backoff on any failure, and re-enables 80% auto-compaction plus the /compact command.",
-  "version": "1.0.20260904",
+  "version": "1.0.20260904-1",
   "publishConfig": {
     "access": "public"
   },
@@ -57,6 +57,7 @@
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-agent": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-llm": "^0.1.1-rc.2",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2"
