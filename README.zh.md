@@ -24,20 +24,25 @@
 条件：`/forever` 仅在开关为 ON 时有效。关闭开关会立即停止所有正在运行的
 循环并停住所有会话。
 
-loop 永不主动退出。任何失败——LLM 错误、throw、context 临时超限——都
-进入指数 backoff 并把上一轮触发失败的 prompt **真的重发**（重发永远不
-放弃：退避涨到 `maxBackoffMs` 封顶后按封顶间隔一直重试，直到成功；重试
-期间你插的新消息会取代这条过期重发）。哪怕进程中途重启，停滞在错误轮
-的会话也会在下次 attach 时自愈——重放触发报错的那条消息继续重试。退出
-只有三条路：**用户点一下对话里的"停止"按钮**——那一轮 `turn/end` 以
-`aborted` 收场，driver 立刻收手、不再排下一条，这正是"无尽直到你手动停"
-里的那个"手动停"；**把会话归档**——归档只把会话藏起来、并不销毁 agent，
-supervisor 每秒对照 workspace 的归档集合，发现被归档就停 driver 并
-cancel 当前工作，绝不让隐藏的会话在后台白烧 token；或者 agent 离开 live
-registry（删会话 / profile 重启）。若是在回答中途插了条新消息把当前轮
-打断（`interrupted`），loop 不会停，等这轮新问答落地后照常续。loop 配
-80% 自动 compact + `/compact` 命令，长跑的边界不是 token 也不是轮数——
-只看你愿不愿意让它跑。
+loop 永不主动退出。任何失败——LLM 错误、throw、context 临时超限、API
+key 错误、流超时、内存分配失败——都进入指数 backoff 并把上一轮触发失败的
+prompt **真的重发**（重发永远不放弃：退避涨到 `maxBackoffMs` 封顶后按封顶
+间隔一直重试，直到成功；重试期间你插的新消息会取代这条过期重发）。其中
+**上下文压力类错误**（context 超长、token 超限、"Allocation error: not
+enough memory" 等）在重发前会先通过宿主 `ctx.compaction.compactNow` 自动
+触发一次压缩（每次冷却 5 分钟，防止反复烧钱），把历史缩到窗口内再重试——
+所以上下文满了也能自愈，而不是在同一个满窗口上无限失败。哪怕进程中途重启，
+停滞在错误轮的会话也会在下次 attach 时自愈——重放触发报错的那条消息继续
+重试。退出只有三条路：**用户点一下对话里的"停止"按钮**——那一轮
+`turn/end` 以 `aborted`（子因 `user`）收场，driver 立刻收手、不再排下一条，
+这正是"无尽直到你手动停"里的那个"手动停"；**把会话归档**——归档只把会话
+藏起来、并不销毁 agent，supervisor 每秒对照 workspace 的归档集合，发现被
+归档就停 driver 并 cancel 当前工作，绝不让隐藏的会话在后台白烧 token；或者
+agent 离开 live registry（删会话 / profile 重启）。**其它** `aborted`（流
+空闲超时、hook 中断、运行时故障等）不算用户停止——按 retry 退避重试继续跑。
+若是在回答中途插了条新消息把当前轮打断（`interrupted`），loop 不会停，等这
+轮新问答落地后照常续。loop 配 80% 自动 compact + `/compact` 命令，长跑的
+边界不是 token 也不是轮数——只看你愿不愿意让它跑。
 
 ## 安装
 

@@ -34,9 +34,9 @@ const regionStart = src.indexOf("const RECOMMENDED_SUFFIX");
 const regionEnd = blockEndAt("function isForeverCommand");
 const helperRegion = src.slice(regionStart, regionEnd);
 
-const mod = `${helperRegion}\nexport { RECOMMENDED_SUFFIX, isRecommendedLabel, stripRecommendedSuffix, FREE_TEXT_AUTO_ANSWER, pickAutoAnswers, renderEscalationPrompt, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand };`;
+const mod = `${helperRegion}\nexport { RECOMMENDED_SUFFIX, isRecommendedLabel, stripRecommendedSuffix, FREE_TEXT_AUTO_ANSWER, pickAutoAnswers, renderEscalationPrompt, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand, isContextPressureError, tryAutoCompact };`;
 const tmpUrl = "data:text/javascript;base64," + Buffer.from(mod).toString("base64");
-const { pickAutoAnswers, renderEscalationPrompt, FREE_TEXT_AUTO_ANSWER, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand } = await import(tmpUrl);
+const { pickAutoAnswers, renderEscalationPrompt, FREE_TEXT_AUTO_ANSWER, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand, isContextPressureError, tryAutoCompact } = await import(tmpUrl);
 
 let pass = 0;
 let fail = 0;
@@ -191,6 +191,88 @@ check("empty string returns false", isForeverCommand(""), false);
 check("different command returns false", isForeverCommand("/help"), false);
 check("partial match returns false", isForeverCommand("/for"), false);
 check("/forever without leading slash returns false", isForeverCommand("forever"), false);
+
+console.log("\n## isContextPressureError");
+check("context length exceeded", isContextPressureError("This model's maximum context length is 128000 tokens"), true);
+check("context overflow", isContextPressureError("context window overflow"), true);
+check("prompt too long", isContextPressureError("prompt is too long: 200001 tokens > 200000 maximum"), true);
+check("input exceeds limit", isContextPressureError("input is too long for the model"), true);
+check("token limit", isContextPressureError("maximum token limit reached"), true);
+check("too many tokens", isContextPressureError("too many tokens in the request"), true);
+check("allocation error memory", isContextPressureError("Allocation error: not enough memory"), true);
+check("out of memory", isContextPressureError("out of memory allocating buffer"), true);
+check("normal error is not context pressure", isContextPressureError("API key is invalid"), false);
+check("timeout is not context pressure", isContextPressureError("stream idle timeout after 300000ms"), false);
+check("non-string is false", isContextPressureError(null), false);
+check("empty string is false", isContextPressureError(""), false);
+
+console.log("\n## tryAutoCompact");
+{
+  const called = [];
+  const noHistory = await tryAutoCompact(
+    { lastCompactAt: 0, abort: new AbortController() },
+    { id: "a1" },
+    {
+      compactNow: async (agent, signal, commandId) => {
+        called.push({ agent: agent.id, commandId });
+        return null; // no compactable history
+      }
+    },
+    null
+  );
+  check("returns false when no compactable history", noHistory, false);
+  check("calls compactNow with agent and command id", called.length === 1 && called[0].agent === "a1" && called[0].commandId === "dsh-loop-agent-auto", true);
+}
+{
+  const called = [];
+  const ran = await tryAutoCompact(
+    { lastCompactAt: 0, abort: new AbortController() },
+    { id: "a2" },
+    {
+      compactNow: async () => {
+        called.push("compact");
+        return { shadowedSeqs: [1, 2], shadowedTokenCount: 100 };
+      }
+    },
+    null
+  );
+  check("returns true when compaction ran", ran, true);
+  check("result shape read", called.length === 1, true);
+}
+{
+  const calls = [];
+  const state = { lastCompactAt: 0, abort: new AbortController() };
+  await tryAutoCompact(state, { id: "a3" }, {
+    compactNow: async () => ({ shadowedSeqs: [], shadowedTokenCount: 0 })
+  }, null);
+  calls.push("first");
+  const marked = state.lastCompactAt;
+  const cooling = await tryAutoCompact(state, { id: "a3" }, {
+    compactNow: async () => { calls.push("second"); return { shadowedSeqs: [] }; }
+  }, null);
+  check("cooldown blocks second call", cooling, false);
+  check("lastCompactAt set after run", typeof marked === "number" && marked > 0, true);
+}
+{
+  const ran = await tryAutoCompact(
+    { lastCompactAt: 0, abort: new AbortController() },
+    { id: "a4" },
+    null, // no compaction service
+    null
+  );
+  check("no service returns false", ran, false);
+}
+{
+  const ran = await tryAutoCompact(
+    { lastCompactAt: 0, abort: new AbortController() },
+    { id: "a5" },
+    {
+      compactNow: async () => { throw new Error("busy"); }
+    },
+    null
+  );
+  check("compaction failure swallowed, returns false", ran, false);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

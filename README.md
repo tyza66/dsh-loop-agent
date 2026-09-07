@@ -32,27 +32,38 @@ only works when the switch is ON. Turning the switch OFF immediately halts
 all running loops and parks all sessions.
 
 The loop never exits on its own. Any failure — turn-level LLM error, a
-thrown exception, even a transient context overflow — falls through to
+thrown exception, an invalid API key, a stream idle timeout, a memory
+allocation failure, even a transient context overflow — falls through to
 exponential backoff and the prompt that triggered the failed round is
 **actually re-sent** (retries never give up: once the ladder hits the
 `maxBackoffMs` cap, it keeps retrying at that interval until a turn
 succeeds; a message you send while a retry is asleep supersedes the stale
-one). Even a mid-error process restart heals itself — a fresh driver that
-finds a stalled error round replays the last user message that led into it
-and keeps retrying. There are exactly three exits: the user clicks the
-**stop** button in a conversation (that round's `turn/end` arrives as
-`aborted`, and the driver halts on the spot instead of queueing the next
+one). **Context-pressure errors** (context too long, token limit exceeded,
+"Allocation error: not enough memory", ...) additionally trigger an
+automatic compaction through the host's `ctx.compaction.compactNow` seam
+before the retry is re-sent (rate-limited to one pass every 5 minutes so a
+context-bounded loop does not burn tokens hammering compaction) — the
+history is shrunk to fit the window, so a genuinely full context heals
+itself instead of failing identically forever. Even a mid-error process
+restart heals itself — a fresh driver that finds a stalled error round
+replays the last user message that led into it and keeps retrying. There
+are exactly three exits: the user clicks the **stop** button in a
+conversation (that round's `turn/end` arrives as `aborted` with sub-reason
+`user`, and the driver halts on the spot instead of queueing the next
 continuation — the "manual stop" of "endless until you manually stop"),
 the conversation is **archived** in the UI (archiving hides a session
 without disposing its agent, so the supervisor polls the workspace
 registry's archive set and halts — and cancels — any driver whose session
 got archived, so a hidden conversation never burns tokens in the
 background), or the agent leaves the live registry (conversation deleted,
-or the profile restarted). A turn merely preempted by an interjected user
-message (`interrupted`) does not exit the loop — it waits for that exchange
-to settle and resumes. The loop is paired with 80% auto-compaction and the
-`/compact` command, so a long run is bounded by neither tokens nor rounds;
-only your willingness to let it run.
+or the profile restarted). Any **other** `aborted` turn (stream idle
+timeout, hook interruption, runtime fault) is not a user stop — it is
+routed through the retry path and the run continues. A turn merely
+preempted by an interjected user message (`interrupted`) does not exit the
+loop — it waits for that exchange to settle and resumes. The loop is
+paired with 80% auto-compaction and the `/compact` command, so a long run
+is bounded by neither tokens nor rounds; only your willingness to let it
+run.
 
 ## Install
 
