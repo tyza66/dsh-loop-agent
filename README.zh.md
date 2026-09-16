@@ -263,9 +263,14 @@ core agent inbox 的 `agent/inbox/inserted` 和 `next-step` 优先级机制
 
 ## 兼容性
 
-针对 `dsh` 0.1.1-rc.2 携带的 `@deepseek-ai/dsh-*` 0.1.1-rc.2 包构建。
+针对 `dsh` 0.1.5-rc.1 / `@deepseek-ai/dsh-*` 0.1.5-rc.2 包适配，并保持对
+旧版 `dsh` 0.1.1-rc.2 的后向兼容：新版移除了 `session.events` getter
+（改为 `session.snapshotEvents()` / `session.seq`），插件通过
+`sessionEvents()` 兼容辅助自动选择正确 API，两者都可用。
 peerDependencies 和上游 web-app bundle 一致；`dsh-base` 在 web profile
-里已经提供了这些依赖，无需额外安装步骤。
+里已经提供了这些依赖，无需额外安装步骤。官方 `@deepseek-ai/dsh-agent-loop`
+是新版 dsh 自带的 agent 引擎（创建/drive agent），不含自动续聊——本插件
+作为续聊驱动与其职责分离、可共存。
 
 ## 协议
 

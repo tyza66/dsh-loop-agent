@@ -34,9 +34,9 @@ const regionStart = src.indexOf("const RECOMMENDED_SUFFIX");
 const regionEnd = blockEndAt("function isForeverCommand");
 const helperRegion = src.slice(regionStart, regionEnd);
 
-const mod = `${helperRegion}\nexport { RECOMMENDED_SUFFIX, isRecommendedLabel, stripRecommendedSuffix, FREE_TEXT_AUTO_ANSWER, pickAutoAnswers, renderEscalationPrompt, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand, isContextPressureError, tryAutoCompact };`;
+const mod = `${helperRegion}\nexport { RECOMMENDED_SUFFIX, isRecommendedLabel, stripRecommendedSuffix, FREE_TEXT_AUTO_ANSWER, pickAutoAnswers, renderEscalationPrompt, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand, isContextPressureError, tryAutoCompact, sessionEvents };`;
 const tmpUrl = "data:text/javascript;base64," + Buffer.from(mod).toString("base64");
-const { pickAutoAnswers, renderEscalationPrompt, FREE_TEXT_AUTO_ANSWER, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand, isContextPressureError, tryAutoCompact } = await import(tmpUrl);
+const { pickAutoAnswers, renderEscalationPrompt, FREE_TEXT_AUTO_ANSWER, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand, isContextPressureError, tryAutoCompact, sessionEvents } = await import(tmpUrl);
 
 let pass = 0;
 let fail = 0;
@@ -272,6 +272,28 @@ console.log("\n## tryAutoCompact");
     null
   );
   check("compaction failure swallowed, returns false", ran, false);
+}
+
+console.log("\n## sessionEvents");
+{
+  // dsh 0.1.5+: session.snapshotEvents() replaces the removed session.events
+  const log = Object.freeze([{ seq: 0 }, { seq: 1 }]);
+  const sessionNew = { snapshotEvents: () => log };
+  check("new dsh uses snapshotEvents()", sessionEvents(sessionNew), log);
+}
+{
+  // dsh 0.1.1: legacy session.events property still works
+  const log = Object.freeze([{ seq: 0 }]);
+  check("legacy dsh falls back to events", sessionEvents({ events: log }), log);
+}
+{
+  check("null session returns empty array", sessionEvents(null), []);
+  check("undefined session returns empty array", sessionEvents(undefined), []);
+}
+{
+  // session.seq equivalence: haltAtSeq = session.seq ?? sessionEvents(session).length
+  const sessionNew = { snapshotEvents: () => Object.freeze([{ seq: 0 }, { seq: 1 }, { seq: 2 }]) };
+  check("snapshotEvents length matches seq", sessionEvents(sessionNew).length, 3);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

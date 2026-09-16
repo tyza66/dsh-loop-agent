@@ -330,10 +330,16 @@ queues the next one.
 
 ## Compatibility
 
-Built against the same `@deepseek-ai/dsh-*` 0.1.1-rc.2 packages that
-ship with `dsh` 0.1.1-rc.2. The peer dependencies are the same ones
-the upstream web-app bundle declares; `dsh-base` already provides them
-in the web profile, so no extra install step is required.
+Adapted for `dsh` 0.1.5-rc.1 / the `@deepseek-ai/dsh-*` 0.1.5-rc.2 packages,
+while staying backward-compatible with `dsh` 0.1.1-rc.2: newer dsh removed
+the `session.events` getter in favor of `session.snapshotEvents()` /
+`session.seq`, and the plugin's `sessionEvents()` helper picks the right API
+for whichever host it runs on. The peer dependencies are the same ones the
+upstream web-app bundle declares; `dsh-base` already provides them in the
+web profile, so no extra install step is required. The official
+`@deepseek-ai/dsh-agent-loop` is dsh's bundled agent engine (creates/drives
+agents, no auto-continuation); this plugin provides the endless-loop
+continuation driver and coexists with it.
 
 ## License
 
