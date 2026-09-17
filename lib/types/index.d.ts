@@ -1,12 +1,16 @@
 /**
  * @tyza66/dsh-loop-agent — endless same-session loop driver for the dsh web profile.
  *
- * Attaches to every new agent through the host-scope `agent/created` hook.
- * After every turn an agent finishes, the loop injects a user-configurable
- * continuation prompt at the next turn boundary, forever. The same Agent
- * and the same Session live for the whole run, so each round sees the
- * full accumulating transcript; only the next user message is replaced by
- * the template.
+ * Attaches to every top-level (root) agent by polling the public
+ * `ctx.agents.roots()` registry once a second. The lifecycle events
+ * (`agent/created` / `agent/disposed` / `session/disposed`) are
+ * scope-filtered and never reach a plugin sitting on the root context, so
+ * the poll is the only reliable discovery + teardown signal a third-party
+ * host plugin has. After every turn an agent finishes, the loop injects a
+ * user-configurable continuation prompt at the next turn boundary, forever.
+ * The same Agent and the same Session live for the whole run, so each round
+ * sees the full accumulating transcript; only the next user message is
+ * replaced by the template.
  *
  * User messages take priority by inbox construction: client input lands
  * in `next-step` while the loop's continuation lands in `next-turn`, and
@@ -17,9 +21,10 @@
  *
  * The loop never exits on its own. Any failure is caught and converted
  * into exponential backoff plus a re-send of the same prompt. The only
- * exit is the session being torn down: `agent/disposed` (or
- * `session/disposed`) observed on the host scope flips the loop's
- * `disarmed` flag.
+ * exit is `state.disarm()`: the user clicking stop, archiving the session,
+ * or the agent leaving the live registry (observed by the supervisor poll,
+ * which replaces the never-delivered scope-filtered `agent/disposed`
+ * signal).
  *
  * Context-window pressure is *not* the loop's job. 80% / `/compact` is
  * wired by re-enabling `dsh-compaction-basic` (auto) and

@@ -34,9 +34,9 @@ const regionStart = src.indexOf("const RECOMMENDED_SUFFIX");
 const regionEnd = blockEndAt("function isForeverCommand");
 const helperRegion = src.slice(regionStart, regionEnd);
 
-const mod = `${helperRegion}\nexport { RECOMMENDED_SUFFIX, isRecommendedLabel, stripRecommendedSuffix, FREE_TEXT_AUTO_ANSWER, pickAutoAnswers, renderEscalationPrompt, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand, isContextPressureError, tryAutoCompact, sessionEvents, isProductiveTurnEnd };`;
+const mod = `${helperRegion}\nexport { RECOMMENDED_SUFFIX, isRecommendedLabel, stripRecommendedSuffix, FREE_TEXT_AUTO_ANSWER, pickAutoAnswers, renderEscalationPrompt, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand, isContextPressureError, tryAutoCompact, sessionEvents, isProductiveTurnEnd, shouldContinueAfterTurn };`;
 const tmpUrl = "data:text/javascript;base64," + Buffer.from(mod).toString("base64");
-const { pickAutoAnswers, renderEscalationPrompt, FREE_TEXT_AUTO_ANSWER, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand, isContextPressureError, tryAutoCompact, sessionEvents, isProductiveTurnEnd } = await import(tmpUrl);
+const { pickAutoAnswers, renderEscalationPrompt, FREE_TEXT_AUTO_ANSWER, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand, isContextPressureError, tryAutoCompact, sessionEvents, isProductiveTurnEnd, shouldContinueAfterTurn } = await import(tmpUrl);
 
 let pass = 0;
 let fail = 0;
@@ -307,6 +307,23 @@ console.log("\n## isProductiveTurnEnd");
   check("undefined reason is not productive", isProductiveTurnEnd(undefined), false);
   check("null reason is not productive", isProductiveTurnEnd(null), false);
   check("unknown kind is not productive", isProductiveTurnEnd({ kind: "something-new" }), false);
+}
+
+console.log("\n## shouldContinueAfterTurn");
+{
+  // Productive ends always drive, regardless of /forever state or round.
+  check("completed always continues", shouldContinueAfterTurn({ kind: "completed" }, false, 0), true);
+  check("max-tokens always continues", shouldContinueAfterTurn({ kind: "max-tokens" }, false, 5), true);
+  // /forever initial start: no turn/end yet (reason undefined) must still start.
+  check("/forever first phase starts with undefined reason", shouldContinueAfterTurn(undefined, true, 0), true);
+  check("/forever first phase starts with null-ish reason", shouldContinueAfterTurn(null, true, 0), false);
+  // But the /forever exception is scoped to round 0 only.
+  check("undefined reason at round >0 waits", shouldContinueAfterTurn(undefined, true, 3), false);
+  check("undefined reason without /forever waits", shouldContinueAfterTurn(undefined, false, 0), false);
+  // Non-productive reasons wait even for /forever round 0.
+  check("blocked waits for /forever", shouldContinueAfterTurn({ kind: "blocked" }, true, 0), false);
+  check("error waits for /forever", shouldContinueAfterTurn({ kind: "error", error: { code: "x", message: "y" } }, true, 0), false);
+  check("aborted(user) waits for /forever", shouldContinueAfterTurn({ kind: "aborted", reason: { kind: "user" } }, true, 0), false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
