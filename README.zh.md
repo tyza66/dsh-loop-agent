@@ -267,6 +267,10 @@ core agent inbox 的 `agent/inbox/inserted` 和 `next-step` 优先级机制
 旧版 `dsh` 0.1.1-rc.2 的后向兼容：新版移除了 `session.events` getter
 （改为 `session.snapshotEvents()` / `session.seq`），插件通过
 `sessionEvents()` 兼容辅助自动选择正确 API，两者都可用。
+自动应答通道也做了迁移：0.1.5 通过 `user-questions/request` 瀑布回答
+`ask_user_question`（不再有单一 `.provider`），插件注册 `prepend` 瀑布
+handler，同时为 0.1.1 保留旧的 `.provider.ask` 包装。`max-tokens` 轮次
+结束（回答触到输出上限但已被持久化）按正常完成轮处理，循环继续而非空转。
 peerDependencies 和上游 web-app bundle 一致；`dsh-base` 在 web profile
 里已经提供了这些依赖，无需额外安装步骤。官方 `@deepseek-ai/dsh-agent-loop`
 是新版 dsh 自带的 agent 引擎（创建/drive agent），不含自动续聊——本插件

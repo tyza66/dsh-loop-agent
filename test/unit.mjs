@@ -34,9 +34,9 @@ const regionStart = src.indexOf("const RECOMMENDED_SUFFIX");
 const regionEnd = blockEndAt("function isForeverCommand");
 const helperRegion = src.slice(regionStart, regionEnd);
 
-const mod = `${helperRegion}\nexport { RECOMMENDED_SUFFIX, isRecommendedLabel, stripRecommendedSuffix, FREE_TEXT_AUTO_ANSWER, pickAutoAnswers, renderEscalationPrompt, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand, isContextPressureError, tryAutoCompact, sessionEvents };`;
+const mod = `${helperRegion}\nexport { RECOMMENDED_SUFFIX, isRecommendedLabel, stripRecommendedSuffix, FREE_TEXT_AUTO_ANSWER, pickAutoAnswers, renderEscalationPrompt, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand, isContextPressureError, tryAutoCompact, sessionEvents, isProductiveTurnEnd };`;
 const tmpUrl = "data:text/javascript;base64," + Buffer.from(mod).toString("base64");
-const { pickAutoAnswers, renderEscalationPrompt, FREE_TEXT_AUTO_ANSWER, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand, isContextPressureError, tryAutoCompact, sessionEvents } = await import(tmpUrl);
+const { pickAutoAnswers, renderEscalationPrompt, FREE_TEXT_AUTO_ANSWER, lastUserMessageText, hasUserMessage, hasNewerUserActivity, seedInitialBoundary, isForeverCommand, isContextPressureError, tryAutoCompact, sessionEvents, isProductiveTurnEnd } = await import(tmpUrl);
 
 let pass = 0;
 let fail = 0;
@@ -294,6 +294,19 @@ console.log("\n## sessionEvents");
   // session.seq equivalence: haltAtSeq = session.seq ?? sessionEvents(session).length
   const sessionNew = { snapshotEvents: () => Object.freeze([{ seq: 0 }, { seq: 1 }, { seq: 2 }]) };
   check("snapshotEvents length matches seq", sessionEvents(sessionNew).length, 3);
+}
+
+console.log("\n## isProductiveTurnEnd");
+{
+  check("completed is productive", isProductiveTurnEnd({ kind: "completed" }), true);
+  check("max-tokens is productive (truncated answer still counts)", isProductiveTurnEnd({ kind: "max-tokens" }), true);
+  check("blocked is not productive", isProductiveTurnEnd({ kind: "blocked" }), false);
+  check("error is not productive", isProductiveTurnEnd({ kind: "error", error: { code: "x", message: "y" } }), false);
+  check("aborted is not productive", isProductiveTurnEnd({ kind: "aborted", reason: { kind: "user" } }), false);
+  check("interrupted is not productive", isProductiveTurnEnd({ kind: "interrupted" }), false);
+  check("undefined reason is not productive", isProductiveTurnEnd(undefined), false);
+  check("null reason is not productive", isProductiveTurnEnd(null), false);
+  check("unknown kind is not productive", isProductiveTurnEnd({ kind: "something-new" }), false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

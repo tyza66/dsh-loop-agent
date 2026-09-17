@@ -334,7 +334,13 @@ Adapted for `dsh` 0.1.5-rc.1 / the `@deepseek-ai/dsh-*` 0.1.5-rc.2 packages,
 while staying backward-compatible with `dsh` 0.1.1-rc.2: newer dsh removed
 the `session.events` getter in favor of `session.snapshotEvents()` /
 `session.seq`, and the plugin's `sessionEvents()` helper picks the right API
-for whichever host it runs on. The peer dependencies are the same ones the
+for whichever host it runs on. The auto-answer seam also migrated: 0.1.5
+answers `ask_user_question` through the `user-questions/request` waterfall
+(no single `.provider`), so the plugin registers a `prepend` waterfall
+handler while keeping the legacy `.provider.ask` wrap for 0.1.1. A
+`max-tokens` turn end (the answer hit its output ceiling and was already
+persisted) is treated as a completed round so the loop continues instead of
+spinning. The peer dependencies are the same ones the
 upstream web-app bundle declares; `dsh-base` already provides them in the
 web profile, so no extra install step is required. The official
 `@deepseek-ai/dsh-agent-loop` is dsh's bundled agent engine (creates/drives
